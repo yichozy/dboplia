@@ -1,15 +1,64 @@
 name: Release DBoplia
 
 on:
-  release:
-    types: [published]
+  push:
+    branches:
+      - main
 
 permissions:
   contents: write
 
 jobs:
+  bump-version:
+    name: Bump Version
+    runs-on: ubuntu-latest
+    outputs:
+      new_tag: ${{ steps.get_tag.outputs.new_tag }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get next tag
+        id: get_tag
+        run: |
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          if [[ $LATEST_TAG =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            MAJOR="${BASH_REMATCH[1]}"
+            MINOR="${BASH_REMATCH[2]}"
+            PATCH="${BASH_REMATCH[3]}"
+          else
+            MAJOR=0
+            MINOR=0
+            PATCH=0
+          fi
+          NEW_TAG="v${MAJOR}.${MINOR}.$((PATCH + 1))"
+          echo "new_tag=$NEW_TAG" >> $GITHUB_OUTPUT
+
+      - name: Update app.go version
+        run: |
+          sed -i 's/const AppVersion = "[^"]*"/const AppVersion = "'"${{ steps.get_tag.outputs.new_tag }}"'"/' app.go
+
+      - name: Commit and push
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add app.go
+          git commit -m "chore: bump version to ${{ steps.get_tag.outputs.new_tag }} [skip ci]" || true
+          git tag ${{ steps.get_tag.outputs.new_tag }}
+          git push origin main --tags
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.get_tag.outputs.new_tag }}
+          name: Release ${{ steps.get_tag.outputs.new_tag }}
+          generate_release_notes: true
+
   build:
     name: Build DBoplia
+    needs: bump-version
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -18,6 +67,8 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.bump-version.outputs.new_tag }}
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -57,7 +108,7 @@ jobs:
           if [ "${{ matrix.os }}" = "windows-latest" ]; then
             mv DBoplia.exe DBoplia-windows.exe
           elif [ "${{ matrix.os }}" = "ubuntu-22.04" ]; then
-            mv DBoplia DBoplia-linux
+            tar -czvf DBoplia-linux.tar.gz DBoplia
           elif [ "${{ matrix.os }}" = "macos-latest" ]; then
             tar -czvf DBoplia-macos.tar.gz DBoplia.app/
           fi
@@ -65,4 +116,5 @@ jobs:
       - name: Upload Release Assets
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ needs.bump-version.outputs.new_tag }}
           files: build/bin/DBoplia-*
