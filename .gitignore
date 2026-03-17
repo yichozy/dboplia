@@ -1,0 +1,30 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Wails
+build/bin/
+build
+
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+vendor/
+db_sync_temp
+go.work
+go.work.sum
+/bin/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.npm/
+
+# Config / Secret Files
+config.json
+*.env
