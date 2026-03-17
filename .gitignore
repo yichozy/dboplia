@@ -4,7 +4,7 @@ Thumbs.db
 
 # Wails
 build/bin/
-build
+build/obj/
 
 # Go
 *.exe
