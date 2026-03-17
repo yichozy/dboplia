@@ -10,7 +10,23 @@ import (
 
 	"db_sync/config"
 	"db_sync/migrator"
+
+	"encoding/json"
+	"net/http"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
+
+// Current version of the application
+const AppVersion = "v0.0.1"
+
+// UpdateInfo holds the result of a version check
+type UpdateInfo struct {
+	IsNewer     bool   `json:"isNewer"`
+	CurrentVer  string `json:"currentVer"`
+	LatestVer   string `json:"latestVer"`
+	ReleaseNote string `json:"releaseNote"`
+	ReleaseUrl  string `json:"releaseUrl"`
+}
 
 // App struct
 type App struct {
@@ -125,4 +141,53 @@ func (a *App) SaveSettings(sourceDriver, sourceDSN, sourceDatabase, targetDriver
 		return fmt.Sprintf("Error saving settings: %v", err)
 	}
 	return "Settings saved successfully!"
+}
+
+// CheckVersion hits the Github API to check for updates
+func (a *App) CheckVersion() *UpdateInfo {
+	info := &UpdateInfo{
+		CurrentVer: AppVersion,
+		IsNewer:    false,
+	}
+
+	url := "https://api.github.com/repos/yichozy/dboplia/releases/latest"
+	resp, err := http.Get(url)
+	if err != nil {
+		log.Printf("Error checking for updates: %v", err)
+		return info
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("GitHub API returned status: %d", resp.StatusCode)
+		return info
+	}
+
+	var release struct {
+		TagName  string `json:"tag_name"`
+		HTMLURL  string `json:"html_url"`
+		Body     string `json:"body"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
+		log.Printf("Error decoding GitHub response: %v", err)
+		return info
+	}
+
+	info.LatestVer = release.TagName
+	info.ReleaseUrl = release.HTMLURL
+	info.ReleaseNote = release.Body
+
+	// basic string comparison (assumes vX.Y.Z format is sortable or comparable)
+	if release.TagName != "" && release.TagName != AppVersion {
+		// you might want to consider using semver comparisons instead, this is a basic check.
+		info.IsNewer = true
+	}
+
+	return info
+}
+
+// OpenDownloadUrl opens the release page in user's browser
+func (a *App) OpenDownloadUrl(url string) {
+	runtime.BrowserOpenURL(a.ctx, url)
 }

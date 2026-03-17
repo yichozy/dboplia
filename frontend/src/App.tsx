@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { GetTables, GetDatabases, SyncDatabase, StopSync, LoadSettings, SaveSettings } from '../wailsjs/go/main/App';
+import { GetTables, GetDatabases, SyncDatabase, StopSync, LoadSettings, SaveSettings, CheckVersion, OpenDownloadUrl } from '../wailsjs/go/main/App';
 import { EventsOn, EventsOff } from '../wailsjs/runtime/runtime';
 
 function App() {
@@ -10,10 +10,20 @@ function App() {
     const [targetDriver, setTargetDriver] = useState('postgres');
     const [targetDSN, setTargetDSN] = useState('');
     
+    // Update state
+    const [updateInfo, setUpdateInfo] = useState<any>(null);
+
     // Credentials toggle
     const [hideCredentials, setHideCredentials] = useState(false);
 
     useEffect(() => {
+        // Check for updates
+        CheckVersion().then((info: any) => {
+            if (info && info.isNewer) {
+                setUpdateInfo(info);
+            }
+        }).catch(console.error);
+
         // Load settings on mount
         LoadSettings().then((cfg: any) => {
             if (cfg && cfg.source && cfg.source.driver) {
@@ -198,10 +208,21 @@ function App() {
 
     return (
         <div className="flex flex-col h-screen min-h-screen bg-slate-950 text-slate-200 p-6 font-sans">
-            <header className="text-center mb-8">
-                <h1 className="text-4xl font-extrabold bg-gradient-to-r from-cyan-400 to-emerald-400 bg-clip-text text-transparent mb-2">
-                    DBoplia
-                </h1>
+            <header className="text-center mb-8 relative">
+                <div className="flex justify-center items-center gap-3 mb-2">
+                    <h1 className="text-4xl font-extrabold bg-gradient-to-r from-cyan-400 to-emerald-400 bg-clip-text text-transparent">
+                        DBoplia
+                    </h1>
+                    {updateInfo && (
+                        <button 
+                            onClick={() => OpenDownloadUrl(updateInfo.releaseUrl)}
+                            className="bg-emerald-500/20 text-emerald-400 text-xs font-semibold px-2 py-1 rounded-full border border-emerald-500/30 hover:bg-emerald-500/30 transition-colors animate-pulse"
+                            title="A new version is available. Click to download."
+                        >
+                            Update: {updateInfo.latestVer}
+                        </button>
+                    )}
+                </div>
                 <p className="text-slate-400 text-sm mb-6">Totally replace one database with another</p>
                 
                 <div className="flex justify-center space-x-6 border-b border-slate-800 pb-2">

@@ -51,3 +51,28 @@ export namespace config {
 
 }
 
+export namespace main {
+	
+	export class UpdateInfo {
+	    isNewer: boolean;
+	    currentVer: string;
+	    latestVer: string;
+	    releaseNote: string;
+	    releaseUrl: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new UpdateInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.isNewer = source["isNewer"];
+	        this.currentVer = source["currentVer"];
+	        this.latestVer = source["latestVer"];
+	        this.releaseNote = source["releaseNote"];
+	        this.releaseUrl = source["releaseUrl"];
+	    }
+	}
+
+}
+
