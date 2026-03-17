@@ -50,7 +50,7 @@ jobs:
         if: runner.os == 'Linux'
         run: wails build -platform linux/amd64
 
-      - name: Rename binaries
+      - name: Package binaries
         shell: bash
         run: |
           cd build/bin
@@ -59,7 +59,7 @@ jobs:
           elif [ "${{ matrix.os }}" = "ubuntu-22.04" ]; then
             mv DBoplia DBoplia-linux
           elif [ "${{ matrix.os }}" = "macos-latest" ]; then
-            mv DBoplia.app/Contents/MacOS/DBoplia DBoplia-macos
+            tar -czvf DBoplia-macos.tar.gz DBoplia.app/
           fi
 
       - name: Upload Release Assets
