@@ -4,6 +4,9 @@ on:
   release:
     types: [published]
 
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Build DBoplia
@@ -47,26 +50,19 @@ jobs:
         if: runner.os == 'Linux'
         run: wails build -platform linux/amd64
 
-      - name: Package macOS App
-        if: runner.os == 'macOS'
-        run: |
-          cd build/bin
-          tar -czvf DBoplia-macos.tar.gz DBoplia.app/
-
       - name: Rename binaries
         shell: bash
         run: |
           cd build/bin
-          if [ "${{ runner.os }}" = "Windows" ]; then
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
             mv DBoplia.exe DBoplia-windows.exe
-          elif [ "${{ runner.os }}" = "Linux" ]; then
+          elif [ "${{ matrix.os }}" = "ubuntu-22.04" ]; then
             mv DBoplia DBoplia-linux
+          elif [ "${{ matrix.os }}" = "macos-latest" ]; then
+            mv DBoplia.app/Contents/MacOS/DBoplia DBoplia-macos
           fi
 
       - name: Upload Release Assets
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            build/bin/DBoplia-macos.tar.gz
-            build/bin/DBoplia-windows.exe
-            build/bin/DBoplia-linux
+          files: build/bin/DBoplia-*
