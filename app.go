@@ -13,7 +13,9 @@ import (
 
 	"encoding/json"
 	"net/http"
+
 	"github.com/wailsapp/wails/v2/pkg/runtime"
+	"golang.org/x/mod/semver"
 )
 
 // Current version of the application
@@ -178,9 +180,8 @@ func (a *App) CheckVersion() *UpdateInfo {
 	info.ReleaseUrl = release.HTMLURL
 	info.ReleaseNote = release.Body
 
-	// basic string comparison (assumes vX.Y.Z format is sortable or comparable)
-	if release.TagName != "" && release.TagName != AppVersion {
-		// you might want to consider using semver comparisons instead, this is a basic check.
+	// strict semver comparison
+	if release.TagName != "" && semver.Compare(release.TagName, AppVersion) > 0 {
 		info.IsNewer = true
 	}
 
