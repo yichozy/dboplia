@@ -1,12 +1,12 @@
 {
   "source": {
-    "driver": "mysql",
-    "dsn": "user:password@tcp(localhost:3306)/source_db?charset=utf8mb4&parseTime=True&loc=Local",
-    "database": "beacon-dev"
+    "driver": "postgres",
+    "dsn": "host=localhost user=postgres password=password port=5432 sslmode=disable",
+    "database": "db_name"
   },
   "target": {
     "driver": "postgres",
-    "dsn": "host=localhost user=postgres password=password dbname=target_db port=5432 sslmode=disable",
-    "database": "beacon-dev"
+    "dsn": "host=localhost user=postgres password=password port=5432 sslmode=disable",
+    "database": "db_name"
   }
 }

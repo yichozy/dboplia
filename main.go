@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"embed"
+	"io"
+	"os"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -10,11 +12,25 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options/mac"
 )
 
-//go:embed all:frontend/dist
 var assets embed.FS
 
-//go:embed build/appicon.png
 var icon []byte
+
+func init() {
+	if _, err := os.Stat("config.json"); os.IsNotExist(err) {
+		src := "config.json.example"
+		if _, err := os.Stat("config.json.exmaple"); err == nil {
+			src = "config.json.exmaple" // Handling the typo in the example file name
+		}
+		if sourceFile, err := os.Open(src); err == nil {
+			defer sourceFile.Close()
+			if destFile, err := os.Create("config.json"); err == nil {
+				defer destFile.Close()
+				io.Copy(destFile, sourceFile)
+			}
+		}
+	}
+}
 
 func main() {
 	// Create an instance of the app structure
