@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/wailsapp/wails/v2/pkg/runtime"
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"db_sync/config"
 )
@@ -38,11 +38,12 @@ func GetDatabases(driver, dsn string) ([]string, error) {
 	var query string
 	var databases []string
 
-	if driver == "mysql" {
+	switch driver {
+	case "mysql":
 		query = "SHOW DATABASES"
-	} else if driver == "postgres" {
+	case "postgres":
 		query = "SELECT datname FROM pg_database WHERE datistemplate = false"
-	} else {
+	default:
 		return nil, fmt.Errorf("unsupported driver: %s", driver)
 	}
 
@@ -154,14 +155,14 @@ func (m *Migrator) Run(ctx context.Context, selectedTables []string) error {
 
 	for i, table := range tables {
 		fmt.Printf("Migrating table %s...\n", table)
-		
+
 		runtime.EventsEmit(ctx, "syncProgress", map[string]interface{}{
 			"current": i,
 			"total":   len(tables),
 			"table":   table,
 			"status":  fmt.Sprintf("Migrating %s (%d/%d)", table, i+1, len(tables)),
 		})
-		
+
 		if err := m.syncTable(ctx, sourceDB, targetDB, table, m.Config.Source.Driver, m.Config.Target.Driver); err != nil {
 			return fmt.Errorf("failed migrating table %s: %w", table, err)
 		}
@@ -218,7 +219,7 @@ func (m *Migrator) syncTable(ctx context.Context, sourceDB, targetDB *sql.DB, ta
 	for i, ct := range colTypes {
 		dbType := ct.DatabaseTypeName() // Ex: INT, VARCHAR, DATETIME
 		mappedType := m.mapType(dbType, targetDriver)
-		
+
 		createSQL += fmt.Sprintf("%s %s", quoteIdentifier(cols[i], targetDriver), mappedType)
 		if i < len(colTypes)-1 {
 			createSQL += ", "
@@ -259,7 +260,7 @@ func (m *Migrator) syncTable(ctx context.Context, sourceDB, targetDB *sql.DB, ta
 	}
 	defer stmt.Close()
 
-	// 4. Sync Row By Row 
+	// 4. Sync Row By Row
 	// Setup pointers to raw arbitrary data array depending on column sizes
 	values := make([]interface{}, len(cols))
 	valuePtrs := make([]interface{}, len(cols))
@@ -309,7 +310,7 @@ func (m *Migrator) syncTable(ctx context.Context, sourceDB, targetDB *sql.DB, ta
 // Used only for the generic DB migration capability.
 func (m *Migrator) mapType(sourceType, targetDriver string) string {
 	t := strings.ToUpper(sourceType)
-	
+
 	if targetDriver == "postgres" {
 		switch {
 		case strings.Contains(t, "BLOB"), strings.Contains(t, "BYTEA"), strings.Contains(t, "BINARY"):
@@ -330,7 +331,7 @@ func (m *Migrator) mapType(sourceType, targetDriver string) string {
 			return "TEXT"
 		}
 	}
-	
+
 	if targetDriver == "mysql" {
 		switch {
 		case strings.Contains(t, "BLOB"), strings.Contains(t, "BYTEA"), strings.Contains(t, "BINARY"):

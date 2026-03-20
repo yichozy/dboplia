@@ -7,6 +7,7 @@ import (
 	"log"
 	"regexp"
 	"strings"
+	"sync"
 
 	"db_sync/config"
 	"db_sync/migrator"
@@ -34,6 +35,7 @@ type UpdateInfo struct {
 type App struct {
 	ctx            context.Context
 	syncCancelFunc context.CancelFunc
+	cancelMutex    sync.Mutex
 }
 
 // NewApp creates a new App application struct
@@ -78,6 +80,7 @@ func BuildDSN(driver, baseDSN, dbName string) string {
 
 // SyncDatabase runs the database migration using config.json directly
 func (a *App) SyncDatabase(selectedTables []string) string {
+	log.Println("[SyncDatabase] Started...")
 	cfg, err := config.LoadConfig("config.json")
 	if err != nil {
 		return fmt.Sprintf("Error loading config: %v", err)
@@ -98,27 +101,43 @@ func (a *App) SyncDatabase(selectedTables []string) string {
 
 	// Context for cancellation check
 	ctx, cancel := context.WithCancel(a.ctx)
+	
+	a.cancelMutex.Lock()
 	a.syncCancelFunc = cancel
+	a.cancelMutex.Unlock()
+	
 	defer func() {
+		a.cancelMutex.Lock()
 		a.syncCancelFunc = nil
+		a.cancelMutex.Unlock()
 		cancel()
+		log.Println("[SyncDatabase] Cleaned up context.")
 	}()
 
+	log.Println("[SyncDatabase] Passing context to Migrator Run...")
 	if err := m.Run(ctx, selectedTables); err != nil {
 		if errors.Is(err, context.Canceled) {
+			log.Println("[SyncDatabase] Returning stopped by user message.")
 			return "Database migration stopped by user."
 		}
-		log.Printf("Migration failed: %v", err)
+		log.Printf("[SyncDatabase] Migration failed with err: %v\n", err)
 		return fmt.Sprintf("Error: %v", err)
 	}
 
+	log.Println("[SyncDatabase] Finished successfully.")
 	return "Database migration completed successfully!"
 }
 
 // StopSync requests the active migration loop to cancel
 func (a *App) StopSync() {
+	log.Println("[StopSync] Invoked!")
+	a.cancelMutex.Lock()
+	defer a.cancelMutex.Unlock()
 	if a.syncCancelFunc != nil {
+		log.Println("[StopSync] Canceling context...")
 		a.syncCancelFunc()
+	} else {
+		log.Println("[StopSync] syncCancelFunc is nil, nothing to cancel.")
 	}
 }
 
