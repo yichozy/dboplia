@@ -536,7 +536,7 @@ function App() {
                     </div>
 
                     <div className="flex gap-4">
-                        {activeTab === 'sync' ? (
+                        {activeTab === 'sync' && (
                             isSyncing ? (
                                 <button 
                                     className="px-6 py-2.5 rounded-xl text-sm font-semibold transition-all shadow-lg active:scale-95 flex items-center gap-2 bg-red-500/20 text-red-500 border border-red-500/50 hover:bg-red-500/30"
@@ -555,7 +555,8 @@ function App() {
                                     Start Total Sync
                                 </button>
                             )
-                        ) : (
+                        )}
+                        {activeTab === 'settings' && (
                             <button 
                                 className="px-6 py-2.5 bg-slate-800 text-slate-200 hover:text-white border border-slate-700 hover:border-slate-500 hover:bg-slate-700 rounded-xl text-sm font-medium transition-all shadow-lg active:scale-95"
                                 onClick={handleSaveSettings}

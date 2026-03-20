@@ -156,6 +156,15 @@ func (m *Migrator) Run(ctx context.Context, selectedTables []string) error {
 		return fmt.Errorf("failed to ping target db: %w", err)
 	}
 
+	// Forcefully close DB connections on context cancellation 
+	// to prevent driver blocking on 'rows.Close()' drain.
+	go func() {
+		<-ctx.Done()
+		emitLog("  -> Context canceled! Forcibly closing database connections to abort immediately...")
+		sourceDB.Close()
+		targetDB.Close()
+	}()
+
 	// Run Migration Logic
 	tables := selectedTables
 	if len(tables) == 0 {
@@ -176,7 +185,7 @@ func (m *Migrator) Run(ctx context.Context, selectedTables []string) error {
 			"status":  fmt.Sprintf("Migrating %s (%d/%d)", table, i+1, len(tables)),
 		})
 
-		if err := m.syncTable(ctx, sourceDB, targetDB, table, m.Config.Source.Driver, m.Config.Target.Driver); err != nil {
+		if err := m.syncTable(ctx, sourceDB, targetDB, table, m.Config.Source.Driver, m.Config.Target.Driver, emitLog); err != nil {
 			return fmt.Errorf("failed migrating table %s: %w", table, err)
 		}
 	}
@@ -193,13 +202,18 @@ func (m *Migrator) Run(ctx context.Context, selectedTables []string) error {
 }
 
 // syncTable handles the creation of a target table schema and the insert of data rows iteratively.
-func (m *Migrator) syncTable(ctx context.Context, sourceDB, targetDB *sql.DB, tableName, sourceDriver, targetDriver string) error {
+func (m *Migrator) syncTable(ctx context.Context, sourceDB, targetDB *sql.DB, tableName, sourceDriver, targetDriver string, emitLog func(string, ...interface{})) error {
+	emitLog("  -> Extracting schema and rows from source...")
 	// Extract raw rows
 	rows, err := sourceDB.QueryContext(ctx, fmt.Sprintf("SELECT * FROM %s", tableName))
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
+	defer func() {
+		emitLog("  -> Defer: Closing rows...")
+		rows.Close()
+		emitLog("  -> Defer: Rows closed.")
+	}()
 
 	cols, err := rows.Columns()
 	if err != nil {
@@ -221,16 +235,11 @@ func (m *Migrator) syncTable(ctx context.Context, sourceDB, targetDB *sql.DB, ta
 
 	qTableName := quoteIdentifier(tableName, targetDriver)
 
-	// 1. Drop existing table if any
-	_, err = targetDB.ExecContext(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s", qTableName))
-	if err != nil {
-		return err
-	}
-
-	// 2. Build target table schema based on generic types
-	createSQL := fmt.Sprintf("CREATE TABLE %s (", qTableName)
+	// 1. Create table IF NOT EXISTS (preserve schema, keys, and indexes if they pre-exist)
+	emitLog("  -> Ensuring target schema for %s...", qTableName)
+	createSQL := fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (", qTableName)
 	for i, ct := range colTypes {
-		dbType := ct.DatabaseTypeName() // Ex: INT, VARCHAR, DATETIME
+		dbType := ct.DatabaseTypeName()
 		mappedType := m.mapType(dbType, targetDriver)
 
 		createSQL += fmt.Sprintf("%s %s", quoteIdentifier(cols[i], targetDriver), mappedType)
@@ -240,40 +249,49 @@ func (m *Migrator) syncTable(ctx context.Context, sourceDB, targetDB *sql.DB, ta
 	}
 	createSQL += ")"
 
-	_, err = targetDB.ExecContext(ctx, createSQL)
-	if err != nil {
-		return err
+	if _, err = targetDB.ExecContext(ctx, createSQL); err != nil {
+		return fmt.Errorf("failed to create table: %w", err)
 	}
 
-	// 3. Prepare generic insert payload
-	insertSQL := fmt.Sprintf("INSERT INTO %s (", qTableName)
+	// 2. Start ATOMIC transaction for speed and safety
+	emitLog("  -> Starting transaction and clearing old data...")
+	tx, err := targetDB.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	// Defer rollback to catch panics or early returns. If already committed, Rollback is a no-op.
+	defer tx.Rollback()
+
+	// Clear existing elements quickly without destroying the schema
+	if targetDriver == "postgres" {
+		_, err = tx.ExecContext(ctx, fmt.Sprintf("TRUNCATE TABLE %s CASCADE", qTableName))
+	} else {
+		_, err = tx.ExecContext(ctx, fmt.Sprintf("TRUNCATE TABLE %s", qTableName)) // MySQL TRUNCATE
+	}
+	if err != nil {
+		// Fallback to DELETE if TRUNCATE fails (e.g. permission or locking issues)
+		if _, delErr := tx.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s", qTableName)); delErr != nil {
+			return fmt.Errorf("failed to truncate/delete table data: %w", err)
+		}
+	}
+
+	// 3. Prepare generic insert parts for batching
+	colNamesSQL := ""
 	for i, col := range cols {
-		insertSQL += quoteIdentifier(col, targetDriver)
+		colNamesSQL += quoteIdentifier(col, targetDriver)
 		if i < len(cols)-1 {
-			insertSQL += ", "
+			colNamesSQL += ", "
 		}
 	}
-	insertSQL += ") VALUES ("
 
-	for i := range cols {
-		if targetDriver == "postgres" {
-			insertSQL += fmt.Sprintf("$%d", i+1) // postgres format
-		} else {
-			insertSQL += "?" // mysql format
-		}
-		if i < len(cols)-1 {
-			insertSQL += ", "
-		}
-	}
-	insertSQL += ")"
+	// 4. Batch Row Insertion
+	batchSize := 500
+	rowCount := 0
+	totalRow := 0
+	
+	var batchArgs []interface{}
+	var placeholders []string
 
-	stmt, err := targetDB.PrepareContext(ctx, insertSQL)
-	if err != nil {
-		return err
-	}
-	defer stmt.Close()
-
-	// 4. Sync Row By Row
 	// Setup pointers to raw arbitrary data array depending on column sizes
 	values := make([]interface{}, len(cols))
 	valuePtrs := make([]interface{}, len(cols))
@@ -287,8 +305,29 @@ func (m *Migrator) syncTable(ctx context.Context, sourceDB, targetDB *sql.DB, ta
 		valuePtrs[i] = &values[i]
 	}
 
+	emitLog("  -> Streaming and batch-inserting data rows...")
+
+	flushBatch := func() error {
+		if rowCount == 0 {
+			return nil
+		}
+		
+		// Build the VALUES part of the batched INSERT
+		// e.g. INSERT INTO table (a,b) VALUES ($1,$2), ($3,$4)
+		insertSQL := fmt.Sprintf("INSERT INTO %s (%s) VALUES %s", qTableName, colNamesSQL, strings.Join(placeholders, ", "))
+		
+		_, err := tx.ExecContext(ctx, insertSQL, batchArgs...)
+		if err != nil {
+			return fmt.Errorf("batch insert failed at row %d: %w", totalRow, err)
+		}
+
+		batchArgs = nil
+		placeholders = nil
+		rowCount = 0
+		return nil
+	}
+
 	for rows.Next() {
-		// allow canceling from the UI instantly
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -297,24 +336,54 @@ func (m *Migrator) syncTable(ctx context.Context, sourceDB, targetDB *sql.DB, ta
 			return err
 		}
 
-		var dest []interface{}
+		// build the positional parameters for this row: (?, ?) or ($1, $2)
+		var rowPlaceholders []string
 		for i, val := range values {
+			// Track absolute index across the entire mapped batch for Postgres ($1, $2, $3...)
+			paramIndex := rowCount*len(cols) + i + 1
+			
+			if targetDriver == "postgres" {
+				rowPlaceholders = append(rowPlaceholders, fmt.Sprintf("$%d", paramIndex))
+			} else {
+				rowPlaceholders = append(rowPlaceholders, "?")
+			}
+
+			// Format strings vs binary correctly
 			if b, ok := val.([]byte); ok {
 				if isBinaryCol[i] {
-					dest = append(dest, b)
+					batchArgs = append(batchArgs, b)
 				} else {
-					dest = append(dest, string(b))
+					batchArgs = append(batchArgs, string(b))
 				}
 			} else {
-				dest = append(dest, val)
+				batchArgs = append(batchArgs, val)
 			}
 		}
 
-		_, err := stmt.ExecContext(ctx, dest...)
-		if err != nil {
-			return err
+		placeholders = append(placeholders, fmt.Sprintf("(%s)", strings.Join(rowPlaceholders, ", ")))
+		rowCount++
+		totalRow++
+
+		// Flush full batches
+		if rowCount >= batchSize {
+			if err := flushBatch(); err != nil {
+				return err
+			}
+			emitLog("  -> Synced %d rows...", totalRow)
 		}
 	}
+
+	// Flush any remaining rows
+	if err := flushBatch(); err != nil {
+		return err
+	}
+
+	// 5. Commit the transaction
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	emitLog("  -> Completed successfully! Batched and inserted a total of %d rows into %s.", totalRow, qTableName)
 
 	return nil
 }

@@ -11,6 +11,10 @@ export function GetTables(arg1:string,arg2:string):Promise<Array<string>>;
 
 export function LoadSettings():Promise<config.Config>;
 
+export function Log(arg1:string):Promise<void>;
+
+export function Logf(arg1:string,arg2:Array<any>):Promise<void>;
+
 export function OpenDownloadUrl(arg1:string):Promise<void>;
 
 export function SaveSettings(arg1:string,arg2:string,arg3:string,arg4:string,arg5:string,arg6:string):Promise<string>;

@@ -18,6 +18,14 @@ export function LoadSettings() {
   return window['go']['main']['App']['LoadSettings']();
 }
 
+export function Log(arg1) {
+  return window['go']['main']['App']['Log'](arg1);
+}
+
+export function Logf(arg1, arg2) {
+  return window['go']['main']['App']['Logf'](arg1, arg2);
+}
+
 export function OpenDownloadUrl(arg1) {
   return window['go']['main']['App']['OpenDownloadUrl'](arg1);
 }
