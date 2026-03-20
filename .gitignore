@@ -28,3 +28,4 @@ frontend/.npm/
 # Config / Secret Files
 config.json
 *.env
+dboplia.app

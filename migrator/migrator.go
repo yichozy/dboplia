@@ -128,7 +128,13 @@ func (m *Migrator) Run(ctx context.Context, selectedTables []string) error {
 		return fmt.Sprintf("<DSN ends with: %s>", dsn[max(0, len(dsn)-15):])
 	}
 
-	fmt.Printf("Connecting to Source DB: %s %s\n", m.Config.Source.Driver, maskDSN(m.Config.Source.DSN))
+	emitLog := func(format string, args ...interface{}) {
+		msg := fmt.Sprintf(format, args...)
+		fmt.Println(msg)
+		runtime.EventsEmit(ctx, "appLog", msg)
+	}
+
+	emitLog("Connecting to Source DB: %s %s", m.Config.Source.Driver, maskDSN(m.Config.Source.DSN))
 	sourceDB, err := sql.Open(m.Config.Source.Driver, m.Config.Source.DSN)
 	if err != nil {
 		return fmt.Errorf("failed to open source db: %w", err)
@@ -139,7 +145,7 @@ func (m *Migrator) Run(ctx context.Context, selectedTables []string) error {
 		return fmt.Errorf("failed to ping source db: %w", err)
 	}
 
-	fmt.Printf("Connecting to Target DB: %s %s\n", m.Config.Target.Driver, maskDSN(m.Config.Target.DSN))
+	emitLog("Connecting to Target DB: %s %s", m.Config.Target.Driver, maskDSN(m.Config.Target.DSN))
 	targetDB, err := sql.Open(m.Config.Target.Driver, m.Config.Target.DSN)
 	if err != nil {
 		return fmt.Errorf("failed to open target db: %w", err)
@@ -161,7 +167,7 @@ func (m *Migrator) Run(ctx context.Context, selectedTables []string) error {
 	}
 
 	for i, table := range tables {
-		fmt.Printf("Migrating table %s...\n", table)
+		emitLog("Migrating table %s...", table)
 
 		runtime.EventsEmit(ctx, "syncProgress", map[string]interface{}{
 			"current": i,
@@ -182,7 +188,7 @@ func (m *Migrator) Run(ctx context.Context, selectedTables []string) error {
 		"status":  "Database migration completed successfully!",
 	})
 
-	fmt.Println("Database migration completed successfully!")
+	emitLog("Database migration completed successfully!")
 	return nil
 }
 

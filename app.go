@@ -50,6 +50,21 @@ func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 }
 
+func (a *App) Log(msg string) {
+	log.Println(msg)
+	if a.ctx != nil {
+		runtime.EventsEmit(a.ctx, "appLog", msg)
+	}
+}
+
+func (a *App) Logf(format string, args ...interface{}) {
+	msg := fmt.Sprintf(format, args...)
+	log.Println(msg)
+	if a.ctx != nil {
+		runtime.EventsEmit(a.ctx, "appLog", msg)
+	}
+}
+
 // GetDatabases returns the databases for a given server configuration
 func (a *App) GetDatabases(driver, dsn string) ([]string, error) {
 	return migrator.GetDatabases(driver, dsn)
@@ -81,13 +96,15 @@ func BuildDSN(driver, baseDSN, dbName string) string {
 
 // SyncDatabase runs the database migration using config.json directly
 func (a *App) SyncDatabase(selectedTables []string) string {
-	log.Println("[SyncDatabase] Started...")
+	a.Log("[SyncDatabase] Started...")
 	cfg, err := config.LoadConfig()
 	if err != nil {
+		a.Logf("Error loading config: %v", err)
 		return fmt.Sprintf("Error loading config: %v", err)
 	}
 
 	if cfg.Source.Database == "" || cfg.Target.Database == "" {
+		a.Log("Error: Source or Target database is not selected in config.")
 		return "Error: Source or Target database is not selected in config. Please save settings first."
 	}
 
@@ -112,33 +129,33 @@ func (a *App) SyncDatabase(selectedTables []string) string {
 		a.syncCancelFunc = nil
 		a.cancelMutex.Unlock()
 		cancel()
-		log.Println("[SyncDatabase] Cleaned up context.")
+		a.Log("[SyncDatabase] Cleaned up context.")
 	}()
 
-	log.Println("[SyncDatabase] Passing context to Migrator Run...")
+	a.Log("[SyncDatabase] Passing context to Migrator Run...")
 	if err := m.Run(ctx, selectedTables); err != nil {
 		if errors.Is(err, context.Canceled) {
-			log.Println("[SyncDatabase] Returning stopped by user message.")
+			a.Log("[SyncDatabase] Returning stopped by user message.")
 			return "Database migration stopped by user."
 		}
-		log.Printf("[SyncDatabase] Migration failed with err: %v\n", err)
+		a.Logf("[SyncDatabase] Migration failed with err: %v", err)
 		return fmt.Sprintf("Error: %v", err)
 	}
 
-	log.Println("[SyncDatabase] Finished successfully.")
+	a.Log("[SyncDatabase] Finished successfully.")
 	return "Database migration completed successfully!"
 }
 
 // StopSync requests the active migration loop to cancel
 func (a *App) StopSync() {
-	log.Println("[StopSync] Invoked!")
+	a.Log("[StopSync] Invoked!")
 	a.cancelMutex.Lock()
 	defer a.cancelMutex.Unlock()
 	if a.syncCancelFunc != nil {
-		log.Println("[StopSync] Canceling context...")
+		a.Log("[StopSync] Canceling context...")
 		a.syncCancelFunc()
 	} else {
-		log.Println("[StopSync] syncCancelFunc is nil, nothing to cancel.")
+		a.Log("[StopSync] syncCancelFunc is nil, nothing to cancel.")
 	}
 }
 
@@ -159,7 +176,7 @@ func (a *App) SaveSettings(sourceDriver, sourceDSN, sourceDatabase, targetDriver
 		Target: config.DatabaseConfig{Driver: targetDriver, DSN: targetDSN, Database: targetDatabase},
 	}
 	if err := config.SaveConfig(cfg); err != nil {
-		log.Printf("Error saving config: %v", err)
+		a.Logf("Error saving config: %v", err)
 		return fmt.Sprintf("Error saving settings: %v", err)
 	}
 	return "Settings saved successfully!"
@@ -178,13 +195,13 @@ func (a *App) CheckVersion() *UpdateInfo {
 	}
 	resp, err := client.Get(url)
 	if err != nil {
-		log.Printf("Error checking for updates: %v", err)
+		a.Logf("Error checking for updates: %v", err)
 		return info
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		log.Printf("GitHub API returned status: %d", resp.StatusCode)
+		a.Logf("GitHub API returned status: %d", resp.StatusCode)
 		return info
 	}
 
@@ -195,7 +212,7 @@ func (a *App) CheckVersion() *UpdateInfo {
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
-		log.Printf("Error decoding GitHub response: %v", err)
+		a.Logf("Error decoding GitHub response: %v", err)
 		return info
 	}
 

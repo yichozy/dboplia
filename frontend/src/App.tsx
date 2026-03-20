@@ -16,6 +16,9 @@ function App() {
     // Credentials toggle
     const [hideCredentials, setHideCredentials] = useState(false);
 
+    // Live Logs
+    const [logs, setLogs] = useState<string[]>([]);
+
     useEffect(() => {
         // Check for updates
         CheckVersion().then((info: any) => {
@@ -46,6 +49,15 @@ function App() {
                 }).catch(console.error);
             }
         }).catch(console.error);
+
+        // Listen for logs
+        EventsOn('appLog', (msg: string) => {
+            setLogs(prev => [...prev, msg]);
+        });
+        
+        return () => {
+            EventsOff('appLog');
+        };
     }, []);
 
     const [sourceDatabases, setSourceDatabases] = useState<string[]>([]);
@@ -231,6 +243,12 @@ function App() {
                         onClick={() => setActiveTab('settings')}
                     >
                         Server Settings
+                    </button>
+                    <button 
+                        className={`pb-2 px-2 text-sm font-medium transition-colors ${activeTab === 'logs' ? 'text-cyan-400 border-b-2 border-cyan-400' : 'text-slate-500 hover:text-slate-300'}`}
+                        onClick={() => setActiveTab('logs')}
+                    >
+                        Live Logs
                     </button>
                 </div>
             </header>
@@ -462,6 +480,31 @@ function App() {
                                         ))}
                                     </select>
                                 </div>
+                            )}
+                        </div>
+                    </div>
+                </main>
+            )}
+
+            {activeTab === 'logs' && (
+                <main className="flex gap-6 flex-1 overflow-auto animate-in fade-in slide-in-from-bottom-2 duration-300 p-1">
+                    <div className="flex-1 bg-slate-900/50 border border-slate-800 rounded-2xl p-6 flex flex-col font-mono text-sm overflow-hidden text-slate-300 shadow-xl">
+                        <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-800">
+                            <h2 className="text-lg font-semibold text-cyan-400">Live Migration Logs</h2>
+                            <button 
+                                className="text-xs font-semibold bg-slate-800 hover:bg-slate-700 px-3 py-1 rounded transition-colors" 
+                                onClick={() => setLogs([])}
+                            >
+                                Clear Logs
+                            </button>
+                        </div>
+                        <div className="flex-1 overflow-y-auto w-full bg-slate-950 border border-slate-800 rounded-lg p-4 font-mono text-xs whitespace-pre-wrap break-all custom-scrollbar">
+                            {logs.length === 0 ? (
+                                <p className="text-slate-600 italic">No logs available. Start a sync to see output.</p>
+                            ) : (
+                                logs.map((log, i) => (
+                                    <div key={i} className="mb-1 break-words"><span className="text-slate-500 select-none mr-2">›</span>{log}</div>
+                                ))
                             )}
                         </div>
                     </div>
