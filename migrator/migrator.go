@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"time"
 
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
@@ -31,7 +32,10 @@ func GetDatabases(driver, dsn string) ([]string, error) {
 	}
 	defer db.Close()
 
-	if err := db.Ping(); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := db.PingContext(ctx); err != nil {
 		return nil, fmt.Errorf("failed to ping db: %w", err)
 	}
 
@@ -47,7 +51,7 @@ func GetDatabases(driver, dsn string) ([]string, error) {
 		return nil, fmt.Errorf("unsupported driver: %s", driver)
 	}
 
-	rows, err := db.Query(query)
+	rows, err := db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query databases: %w", err)
 	}
@@ -72,7 +76,10 @@ func GetTables(driver, dsn string) ([]string, error) {
 	}
 	defer db.Close()
 
-	if err := db.Ping(); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := db.PingContext(ctx); err != nil {
 		return nil, fmt.Errorf("failed to ping db: %w", err)
 	}
 
@@ -87,7 +94,7 @@ func GetTables(driver, dsn string) ([]string, error) {
 		return nil, fmt.Errorf("unsupported driver: %s", driver)
 	}
 
-	rows, err := db.Query(query)
+	rows, err := db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query tables: %w", err)
 	}

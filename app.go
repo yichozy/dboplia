@@ -14,6 +14,7 @@ import (
 
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"golang.org/x/mod/semver"
@@ -172,7 +173,10 @@ func (a *App) CheckVersion() *UpdateInfo {
 	}
 
 	url := "https://api.github.com/repos/yichozy/dboplia/releases/latest"
-	resp, err := http.Get(url)
+	client := &http.Client{
+		Timeout: 3 * time.Second,
+	}
+	resp, err := client.Get(url)
 	if err != nil {
 		log.Printf("Error checking for updates: %v", err)
 		return info

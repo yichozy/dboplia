@@ -12,8 +12,10 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options/mac"
 )
 
+//go:embed all:frontend/dist
 var assets embed.FS
 
+//go:embed build/appicon.png
 var icon []byte
 
 func init() {

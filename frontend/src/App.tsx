@@ -109,18 +109,12 @@ function App() {
         if (selectedSourceDb) {
             setSelectedSyncTables([]); // clear initially selected lists
             fetchSourceTables(true);
-            // Setup 2 second interval to auto-fetch
-            const interval = setInterval(() => fetchSourceTables(false), 2000);
-            return () => clearInterval(interval);
         }
     }, [selectedSourceDb, sourceDriver, sourceDSN]);
 
     useEffect(() => {
         if (selectedTargetDb) {
             fetchTargetTables();
-            // Setup 2 second interval to auto-fetch
-            const interval = setInterval(fetchTargetTables, 2000);
-            return () => clearInterval(interval);
         }
     }, [selectedTargetDb, targetDriver, targetDSN]);
 
