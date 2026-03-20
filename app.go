@@ -82,7 +82,7 @@ func BuildDSN(driver, baseDSN, dbName string) string {
 // SyncDatabase runs the database migration using config.json directly
 func (a *App) SyncDatabase(selectedTables []string) string {
 	log.Println("[SyncDatabase] Started...")
-	cfg, err := config.LoadConfig("config.json")
+	cfg, err := config.LoadConfig()
 	if err != nil {
 		return fmt.Sprintf("Error loading config: %v", err)
 	}
@@ -144,7 +144,7 @@ func (a *App) StopSync() {
 
 // LoadSettings attempts to load settings from config.json.
 func (a *App) LoadSettings() *config.Config {
-	cfg, err := config.LoadConfig("config.json")
+	cfg, err := config.LoadConfig()
 	if err != nil {
 		// Return empty config if none exists
 		return &config.Config{}
@@ -158,7 +158,7 @@ func (a *App) SaveSettings(sourceDriver, sourceDSN, sourceDatabase, targetDriver
 		Source: config.DatabaseConfig{Driver: sourceDriver, DSN: sourceDSN, Database: sourceDatabase},
 		Target: config.DatabaseConfig{Driver: targetDriver, DSN: targetDSN, Database: targetDatabase},
 	}
-	if err := config.SaveConfig("config.json", cfg); err != nil {
+	if err := config.SaveConfig(cfg); err != nil {
 		log.Printf("Error saving config: %v", err)
 		return fmt.Sprintf("Error saving settings: %v", err)
 	}

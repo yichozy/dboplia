@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 )
 
 type DatabaseConfig struct {
@@ -16,8 +17,20 @@ type Config struct {
 	Target DatabaseConfig `json:"target"`
 }
 
-func LoadConfig(path string) (*Config, error) {
-	file, err := os.Open(path)
+func GetConfigPath() string {
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		configDir = "."
+	}
+	appConfigDir := filepath.Join(configDir, "dboplia")
+	if err := os.MkdirAll(appConfigDir, 0755); err != nil {
+		return "config.json"
+	}
+	return filepath.Join(appConfigDir, "config.json")
+}
+
+func LoadConfig() (*Config, error) {
+	file, err := os.Open(GetConfigPath())
 	if err != nil {
 		return nil, err
 	}
@@ -31,8 +44,8 @@ func LoadConfig(path string) (*Config, error) {
 	return &cfg, nil
 }
 
-func SaveConfig(path string, cfg *Config) error {
-	file, err := os.Create(path)
+func SaveConfig(cfg *Config) error {
+	file, err := os.Create(GetConfigPath())
 	if err != nil {
 		return err
 	}
