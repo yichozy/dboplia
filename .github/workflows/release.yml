@@ -23,6 +23,7 @@ jobs:
       - name: Get next tag
         id: get_tag
         run: |
+          git fetch --tags origin || true
           LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
           if [[ $LATEST_TAG =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
             MAJOR="${BASH_REMATCH[1]}"
@@ -33,7 +34,21 @@ jobs:
             MINOR=0
             PATCH=0
           fi
-          NEW_TAG="v${MAJOR}.${MINOR}.$((PATCH + 1))"
+
+          PATCH=$((PATCH + 1))
+          
+          if [ "$PATCH" -ge 10 ]; then
+            MINOR=$((MINOR + 1))
+            PATCH=0
+          fi
+          
+          # Cascade minor bumps to major version
+          if [ "$MINOR" -ge 10 ]; then
+            MAJOR=$((MAJOR + 1))
+            MINOR=0
+          fi
+
+          NEW_TAG="v${MAJOR}.${MINOR}.${PATCH}"
           echo "new_tag=$NEW_TAG" >> $GITHUB_OUTPUT
 
       - name: Update app.go version
