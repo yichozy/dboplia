@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { GetTables, GetDatabases, SyncDatabase, DumpAndReplaceDatabase, StopSync, LoadSettings, SaveSettings, CheckVersion, OpenDownloadUrl } from '../wailsjs/go/main/App';
 import { EventsOn, EventsOff } from '../wailsjs/runtime/runtime';
 
@@ -16,8 +16,8 @@ function App() {
     // Credentials toggle
     const [hideCredentials, setHideCredentials] = useState(false);
 
-    // Live Logs
     const [logs, setLogs] = useState<string[]>([]);
+    const logsEndRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         // Check for updates
@@ -73,11 +73,13 @@ function App() {
     const [isSyncing, setIsSyncing] = useState(false);
     const [syncProgress, setSyncProgress] = useState<{current: number, total: number, table: string, status: string} | null>(null);
 
-    const [sourceSearch, setSourceSearch] = useState('');
-    const [targetSearch, setTargetSearch] = useState('');
+    useEffect(() => {
+        if (isSyncing || logs.length > 0) {
+            logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }
+    }, [logs, isSyncing]);
 
-    const filteredSourceDatabases = sourceDatabases.filter(db => db.toLowerCase().includes(sourceSearch.toLowerCase()));
-    const filteredTargetDatabases = targetDatabases.filter(db => db.toLowerCase().includes(targetSearch.toLowerCase()));
+
 
     // Dynamic Connection String Generator for Tables
     const getDbContextDSN = (driver: string, dsn: string, dbName: string) => {
@@ -234,6 +236,14 @@ function App() {
         }
     };
 
+    const handleSaveSettingsAuto = async (srcDb: string, tgtDb: string) => {
+        try {
+            await SaveSettings(sourceDriver, sourceDSN, srcDb, targetDriver, targetDSN, tgtDb);
+        } catch (err) {
+            console.error("Auto save failed:", err);
+        }
+    };
+
     return (
         <div className="flex flex-col h-screen min-h-screen bg-slate-950 text-slate-200 p-6 font-sans">
             <header className="text-center mb-8 relative">
@@ -272,308 +282,351 @@ function App() {
                     >
                         Server Settings
                     </button>
-                    <button 
-                        className={`pb-2 px-2 text-sm font-medium transition-colors ${activeTab === 'logs' ? 'text-cyan-400 border-b-2 border-cyan-400' : 'text-slate-500 hover:text-slate-300'}`}
-                        onClick={() => setActiveTab('logs')}
-                    >
-                        Live Logs
-                    </button>
                 </div>
             </header>
 
-            {activeTab === 'sync_db' && (
-                <main className="flex gap-6 flex-1 overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-300 items-center justify-center p-4">
-                    <div className="bg-slate-900/50 backdrop-blur-xl border border-slate-800 rounded-2xl p-10 flex flex-col items-center justify-center shadow-xl w-full max-w-2xl text-center">
-                        <div className="w-16 h-16 bg-amber-500/20 text-amber-500 rounded-full flex items-center justify-center mb-6">
-                            <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
-                            </svg>
-                        </div>
-                        <h2 className="text-2xl font-bold text-slate-100 mb-2">Native Database Replacement</h2>
-                        <p className="text-slate-400 mb-8 text-sm">
-                            This will completely replace the target database using native database dump utilities (e.g. pg_dump and psql, or mysqldump and mysql). All schema, indices, constraints, and data will be mirrored perfectly.
-                        </p>
-                        
-                        <div className="flex items-center gap-4 w-full mb-8">
-                            <div className="flex-1 bg-slate-950 border border-slate-800 rounded-xl p-4 text-left">
-                                <p className="text-xs text-slate-500 mb-1">Source DB</p>
-                                <p className="text-sm font-semibold text-cyan-400 truncate">{selectedSourceDb || 'Not Configured'}</p>
-                            </div>
-                            <svg className="w-6 h-6 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
-                            </svg>
-                            <div className="flex-1 bg-slate-950 border border-slate-800 rounded-xl p-4 text-left">
-                                <p className="text-xs text-slate-500 mb-1">Target DB</p>
-                                <p className="text-sm font-semibold text-emerald-400 truncate">{selectedTargetDb || 'Not Configured'}</p>
+            <main className="flex gap-6 flex-1 overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-300 pt-2">
+                {activeTab === 'settings' ? (
+                    <div className="flex gap-6 flex-1 w-full overflow-auto p-1">
+                        {/* SOURCE SETTINGS */}
+                        <div className="flex-1 bg-slate-900/50 border border-slate-800 rounded-2xl p-6 flex flex-col">
+                            <h2 className="text-lg font-semibold text-cyan-400 mb-6 pb-3 border-b border-slate-800">
+                                Source Sever Connection
+                            </h2>
+                            
+                            <div className="space-y-6">
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-400 mb-2">Database Driver</label>
+                                    <select 
+                                        className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-sm text-slate-200 focus:ring-2 focus:ring-cyan-500/50 outline-none transition-all"
+                                        value={sourceDriver} 
+                                        onChange={e => {setSourceDriver(e.target.value); setHideCredentials(false);}}
+                                    >
+                                        <option value="mysql">MySQL</option>
+                                        <option value="postgres">PostgreSQL</option>
+                                    </select>
+                                </div>
+                                
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-400 mb-2">Connection String (DSN)</label>
+                                    {hideCredentials ? (
+                                        <div className="relative">
+                                            <div className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-sm text-slate-500 italic break-all min-h-[5rem] flex items-center justify-center cursor-pointer hover:bg-slate-900 transition-colors" onClick={() => setHideCredentials(false)}>
+                                                • • • • • • • • • • • • • • • • • • • • • • • • • • • •
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <textarea 
+                                            className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-sm text-slate-200 focus:ring-2 focus:ring-cyan-500/50 outline-none transition-all min-h-[5rem] resize-y font-mono"
+                                            value={sourceDSN} 
+                                            onChange={e => setSourceDSN(e.target.value)}
+                                            placeholder={sourceDriver === 'mysql' ? "user:pass@tcp(localhost:3306)/" : "host=localhost user=postgres password=postgres port=5432 sslmode=disable"}
+                                        />
+                                    )}
+                                </div>
+
+                                <button 
+                                    className="px-4 py-2 bg-slate-800 hover:bg-cyan-900/30 text-cyan-400 text-sm font-medium rounded-lg border border-slate-700 hover:border-cyan-500/50 transition-all w-full md:w-auto"
+                                    onClick={fetchSourceDatabases}
+                                >
+                                    Connect & Fetch Databases
+                                </button>
                             </div>
                         </div>
 
-                        {selectedSourceDb && selectedTargetDb ? (
-                            <p className="text-amber-500 text-xs mt-2 italic font-semibold">* Warning: This action destroys and overrides all existing data directly inside the target database.</p>
-                        ) : (
-                            <p className="text-red-400/80 text-xs mt-2 italic">Please configure databases in Server Settings first.</p>
-                        )}
+                        {/* TARGET SETTINGS */}
+                        <div className="flex-1 bg-slate-900/50 border border-slate-800 rounded-2xl p-6 flex flex-col">
+                            <h2 className="text-lg font-semibold text-emerald-400 mb-6 pb-3 border-b border-slate-800">
+                                Target Sever Connection
+                            </h2>
+                            
+                            <div className="space-y-6">
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-400 mb-2">Database Driver</label>
+                                    <select 
+                                        className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-sm text-slate-200 focus:ring-2 focus:ring-emerald-500/50 outline-none transition-all"
+                                        value={targetDriver} 
+                                        onChange={e => {setTargetDriver(e.target.value); setHideCredentials(false);}}
+                                    >
+                                        <option value="mysql">MySQL</option>
+                                        <option value="postgres">PostgreSQL</option>
+                                    </select>
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-400 mb-2">Connection String (DSN)</label>
+                                    {hideCredentials ? (
+                                        <div className="relative">
+                                            <div className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-sm text-slate-500 italic break-all min-h-[5rem] flex items-center justify-center cursor-pointer hover:bg-slate-900 transition-colors" onClick={() => setHideCredentials(false)}>
+                                                • • • • • • • • • • • • • • • • • • • • • • • • • • • •
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <textarea 
+                                            className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-sm text-slate-200 focus:ring-2 focus:ring-emerald-500/50 outline-none transition-all min-h-[5rem] resize-y font-mono"
+                                            value={targetDSN} 
+                                            onChange={e => setTargetDSN(e.target.value)}
+                                            placeholder={targetDriver === 'mysql' ? "user:pass@tcp(localhost:3306)/" : "host=localhost user=postgres password=postgres port=5432 sslmode=disable"}
+                                        />
+                                    )}
+                                </div>
+
+                                <button 
+                                    className="px-4 py-2 bg-slate-800 hover:bg-emerald-900/30 text-emerald-400 text-sm font-medium rounded-lg border border-slate-700 hover:border-emerald-500/50 transition-all w-full md:w-auto"
+                                    onClick={fetchTargetDatabases}
+                                >
+                                    Connect & Fetch Databases
+                                </button>
+                            </div>
+                        </div>
                     </div>
-                </main>
-            )}
-
-            {activeTab === 'sync_table' && (
-                <main className="flex gap-6 flex-1 overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-300">
-                    {/* SOURCE COLUMN */}
-                    <div className="flex-1 bg-slate-900/50 backdrop-blur-xl border border-slate-800 rounded-2xl p-6 flex flex-col shadow-xl">
-                        <h2 className="text-lg font-semibold text-slate-100 mb-6 pb-3 border-b border-slate-800">
-                            Source Tables {selectedSourceDb ? <span className="text-cyan-400">({selectedSourceDb})</span> : ''}
-                        </h2>
-
-                        <div className="flex-1 flex flex-col overflow-hidden min-h-0">
-                            <h3 className="text-sm font-medium text-slate-400 mb-3 flex items-center justify-between">
-                                <div className="flex items-center gap-2">
-                                    Table List 
-                                    <span className="bg-slate-800 px-2 py-0.5 rounded-full text-xs text-slate-300">{selectedSyncTables.length} / {sourceTables.length}</span>
-                                </div>
-                                <div className="flex gap-2">
-                                    <button 
-                                        className="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-1 rounded transition-colors"
-                                        onClick={() => setSelectedSyncTables(sourceTables)}
-                                    >Select All</button>
-                                    <button 
-                                        className="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-1 rounded transition-colors"
-                                        onClick={() => setSelectedSyncTables([])}
-                                    >None</button>
-                                </div>
-                            </h3>
-                            <ul className="flex-1 overflow-y-auto w-full bg-slate-950 border border-slate-800 rounded-xl rounded-t-lg divide-y divide-slate-800/50">
-                                {sourceTables.length === 0 && (
-                                    <li className="p-8 text-center text-slate-500 italic text-sm">No tables found. Please configure in Settings.</li>
-                                )}
-                                {sourceTables.map(t => {
-                                    const isSame = targetTables.includes(t);
-                                    const isSelected = selectedSyncTables.includes(t);
-                                    return (
-                                        <li key={t} className="px-4 py-3 text-sm text-slate-300 hover:bg-slate-900 transition-colors w-full flex justify-between items-center group">
-                                            <label className="flex items-center gap-3 cursor-pointer flex-1">
-                                                <input 
-                                                    type="checkbox" 
-                                                    checked={isSelected}
-                                                    onChange={() => {
-                                                        setSelectedSyncTables(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t])
+                ) : (
+                    <>
+                        {/* LEFT COLUMN: ACTIVE CONTENT */}
+                        <div className={`flex flex-col gap-6 overflow-hidden transition-all duration-300 ${activeTab === 'sync_db' ? 'flex-[1.5] items-center justify-center' : 'flex-[2.5]'}`}>
+                            {activeTab === 'sync_db' && (
+                                <div className="bg-slate-900/50 backdrop-blur-xl border border-slate-800 rounded-2xl p-10 flex flex-col items-center justify-center shadow-xl w-full max-w-2xl text-center">
+                                    <div className="w-16 h-16 bg-amber-500/20 text-amber-500 rounded-full flex items-center justify-center mb-6">
+                                        <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                                        </svg>
+                                    </div>
+                                    <h2 className="text-2xl font-bold text-slate-100 mb-2">Native Database Replacement</h2>
+                                    <p className="text-slate-400 mb-8 text-sm">
+                                        This will completely replace the target database using native database dump utilities (e.g. pg_dump and psql, or mysqldump and mysql). All schema, indices, constraints, and data will be mirrored perfectly.
+                                    </p>
+                                    
+                                    <div className="flex items-center gap-4 w-full mb-8">
+                                        <div className="flex-1 bg-slate-950 border border-slate-800 rounded-xl p-4 text-left">
+                                            <p className="text-xs text-slate-500 mb-1">Source DB</p>
+                                            {sourceDatabases.length > 0 ? (
+                                                <select 
+                                                    className="w-full bg-slate-900 border border-slate-700/50 rounded-lg p-2 text-sm text-cyan-400 font-semibold focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                                                    value={selectedSourceDb} 
+                                                    onChange={e => {
+                                                        setSelectedSourceDb(e.target.value);
+                                                        handleSaveSettingsAuto(e.target.value, selectedTargetDb);
                                                     }}
-                                                    className="w-4 h-4 rounded bg-slate-900 border-slate-700 text-cyan-500 focus:ring-cyan-500 focus:ring-offset-slate-950"
-                                                />
-                                                <span className={`${isSelected ? 'text-cyan-300' : 'text-slate-400 group-hover:text-cyan-400'}`}>{t}</span>
-                                            </label>
-                                            {isSame ? (
-                                                <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 group-hover:bg-emerald-500/20 transition-colors">Same</span>
+                                                >
+                                                    <option value="" disabled>Select Database...</option>
+                                                    {sourceDatabases.map(db => <option key={db} value={db}>{db}</option>)}
+                                                </select>
                                             ) : (
-                                                <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 group-hover:bg-amber-500/20 transition-colors">Different</span>
+                                                <p className="text-sm font-semibold text-slate-500 truncate">Not Configured</p>
                                             )}
-                                        </li>
-                                    );
-                                })}
-                            </ul>
-                        </div>
-                    </div>
-
-                    {/* TARGET COLUMN */}
-                    <div className="flex-1 bg-slate-900/50 backdrop-blur-xl border border-slate-800 rounded-2xl p-6 flex flex-col shadow-xl">
-                        <h2 className="text-lg font-semibold text-slate-100 mb-6 pb-3 border-b border-slate-800">
-                            Target Tables {selectedTargetDb ? <span className="text-emerald-400">({selectedTargetDb})</span> : ''}
-                        </h2>
-
-                        <div className="flex-1 flex flex-col overflow-hidden min-h-0">
-                            <h3 className="text-sm font-medium text-slate-400 mb-3 flex items-center justify-between">
-                                Table List 
-                                <span className="bg-slate-800 px-2 py-0.5 rounded-full text-xs text-slate-300">{targetTables.length}</span>
-                            </h3>
-                            <ul className="flex-1 overflow-y-auto w-full bg-slate-950 border border-slate-800 rounded-xl rounded-t-lg divide-y divide-slate-800/50">
-                                {targetTables.length === 0 && (
-                                    <li className="p-8 text-center text-slate-500 italic text-sm">No tables found. Please configure in Settings.</li>
-                                )}
-                                {targetTables.map(t => {
-                                    const isSame = sourceTables.includes(t);
-                                    return (
-                                        <li key={t} className="px-4 py-3 text-sm text-slate-300 hover:bg-slate-900 hover:text-emerald-300 transition-colors w-full cursor-default flex justify-between items-center group">
-                                            <span>{t}</span>
-                                            {isSame ? (
-                                                <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 group-hover:bg-emerald-500/20 transition-colors">Same</span>
+                                        </div>
+                                        <svg className="w-6 h-6 text-slate-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                                        </svg>
+                                        <div className="flex-1 bg-slate-950 border border-slate-800 rounded-xl p-4 text-left">
+                                            <p className="text-xs text-slate-500 mb-1">Target DB</p>
+                                            {targetDatabases.length > 0 ? (
+                                                <select 
+                                                    className="w-full bg-slate-900 border border-slate-700/50 rounded-lg p-2 text-sm text-emerald-400 font-semibold focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                                                    value={selectedTargetDb} 
+                                                    onChange={e => {
+                                                        setSelectedTargetDb(e.target.value);
+                                                        handleSaveSettingsAuto(selectedSourceDb, e.target.value);
+                                                    }}
+                                                >
+                                                    <option value="" disabled>Select Database...</option>
+                                                    {targetDatabases.map(db => <option key={db} value={db}>{db}</option>)}
+                                                </select>
                                             ) : (
-                                                <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 group-hover:bg-amber-500/20 transition-colors">Different</span>
+                                                <p className="text-sm font-semibold text-slate-500 truncate">Not Configured</p>
                                             )}
-                                        </li>
-                                    );
-                                })}
-                            </ul>
-                        </div>
-                    </div>
-                </main>
-            )}
-
-            {activeTab === 'settings' && (
-                <main className="flex gap-6 flex-1 overflow-auto animate-in fade-in slide-in-from-bottom-2 duration-300 p-1">
-                    {/* SOURCE SETTINGS */}
-                    <div className="flex-1 bg-slate-900/50 border border-slate-800 rounded-2xl p-6 flex flex-col">
-                        <h2 className="text-lg font-semibold text-cyan-400 mb-6 pb-3 border-b border-slate-800">
-                            Source Sever Connection
-                        </h2>
-                        
-                        <div className="space-y-6">
-                            <div>
-                                <label className="block text-sm font-medium text-slate-400 mb-2">Database Driver</label>
-                                <select 
-                                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-sm text-slate-200 focus:ring-2 focus:ring-cyan-500/50 outline-none transition-all"
-                                    value={sourceDriver} 
-                                    onChange={e => {setSourceDriver(e.target.value); setHideCredentials(false);}}
-                                >
-                                    <option value="mysql">MySQL</option>
-                                    <option value="postgres">PostgreSQL</option>
-                                </select>
-                            </div>
-                            
-                            <div>
-                                <label className="block text-sm font-medium text-slate-400 mb-2">Connection String (DSN)</label>
-                                {hideCredentials ? (
-                                    <div className="relative">
-                                        <div className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-sm text-slate-500 italic break-all min-h-[5rem] flex items-center justify-center cursor-pointer hover:bg-slate-900 transition-colors" onClick={() => setHideCredentials(false)}>
-                                            • • • • • • • • • • • • • • • • • • • • • • • • • • • •
                                         </div>
                                     </div>
-                                ) : (
-                                    <textarea 
-                                        className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-sm text-slate-200 focus:ring-2 focus:ring-cyan-500/50 outline-none transition-all min-h-[5rem] resize-y font-mono"
-                                        value={sourceDSN} 
-                                        onChange={e => setSourceDSN(e.target.value)}
-                                        placeholder={sourceDriver === 'mysql' ? "user:pass@tcp(localhost:3306)/" : "host=localhost user=postgres password=postgres port=5432 sslmode=disable"}
-                                    />
-                                )}
-                            </div>
 
-                            <button 
-                                className="px-4 py-2 bg-slate-800 hover:bg-cyan-900/30 text-cyan-400 text-sm font-medium rounded-lg border border-slate-700 hover:border-cyan-500/50 transition-all w-full md:w-auto"
-                                onClick={fetchSourceDatabases}
-                            >
-                                Connect & Fetch Databases
-                            </button>
-                            
-                            {sourceDatabases.length > 0 && (
-                                <div className="animate-in fade-in slide-in-from-top-2 pt-4 border-t border-slate-800/50 mt-4">
-                                    <label className="block text-sm font-medium text-slate-400 mb-2">Search & Select Database</label>
-                                    <input 
-                                        type="text"
-                                        placeholder="Search database..."
-                                        className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 mb-3 text-sm text-slate-200 focus:ring-2 focus:ring-cyan-500/50 outline-none transition-all placeholder:text-slate-600"
-                                        value={sourceSearch}
-                                        onChange={e => setSourceSearch(e.target.value)}
-                                    />
-                                    <select 
-                                        className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-sm text-slate-200 focus:ring-2 focus:ring-cyan-500/50 outline-none"
-                                        value={selectedSourceDb} 
-                                        onChange={e => setSelectedSourceDb(e.target.value)}
-                                    >
-                                        <option value="" disabled>Select a database</option>
-                                        {filteredSourceDatabases.map(db => (
-                                            <option key={db} value={db}>{db}</option>
-                                        ))}
-                                    </select>
+                                    {selectedSourceDb && selectedTargetDb ? (
+                                        <p className="text-amber-500 text-xs mt-2 italic font-semibold">* Warning: This action destroys and overrides all existing data directly inside the target database.</p>
+                                    ) : (
+                                        <p className="text-red-400/80 text-xs mt-2 italic">Please configure databases in Server Settings first.</p>
+                                    )}
+                                </div>
+                            )}
+
+                            {activeTab === 'sync_table' && (
+                                <div className="flex gap-6 flex-1 min-h-0 w-full overflow-hidden">
+                                    {/* SOURCE COLUMN */}
+                                    <div className="flex-1 bg-slate-900/50 backdrop-blur-xl border border-slate-800 rounded-2xl p-6 flex flex-col shadow-xl min-w-[250px]">
+                                        <div className="flex items-center justify-between mb-6 pb-3 border-b border-slate-800 gap-2">
+                                            <div className="flex flex-col gap-1 w-full">
+                                                <h2 className="text-md font-semibold text-slate-100 flex items-center gap-2">
+                                                    Source
+                                                    {selectedSourceDb && (
+                                                        <button 
+                                                            className="p-1 bg-slate-800 hover:bg-slate-700 text-cyan-400 rounded-md transition-colors flex items-center justify-center border border-slate-700/50 ml-auto"
+                                                            onClick={() => fetchSourceTables()}
+                                                            title="Refresh Tables"
+                                                        >
+                                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                                                        </button>
+                                                    )}
+                                                </h2>
+                                                {sourceDatabases.length > 0 && (
+                                                    <select 
+                                                        className="bg-slate-950 border border-slate-700/50 rounded-lg py-1 px-2 text-xs text-cyan-400 focus:outline-none focus:ring-1 focus:ring-cyan-500 w-full"
+                                                        value={selectedSourceDb} 
+                                                        onChange={e => {
+                                                            setSelectedSourceDb(e.target.value);
+                                                            handleSaveSettingsAuto(e.target.value, selectedTargetDb);
+                                                        }}
+                                                    >
+                                                        <option value="" disabled>Select Database...</option>
+                                                        {sourceDatabases.map(db => <option key={db} value={db}>{db}</option>)}
+                                                    </select>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        <div className="flex-1 flex flex-col overflow-hidden min-h-0">
+                                            <h3 className="text-xs font-medium text-slate-400 mb-3 flex items-center justify-between">
+                                                <div className="flex items-center gap-2">
+                                                    Tables 
+                                                    <span className="bg-slate-800 px-1.5 py-0.5 rounded-full text-[10px] text-slate-300">{selectedSyncTables.length}/{sourceTables.length}</span>
+                                                </div>
+                                                <div className="flex gap-1.5">
+                                                    <button 
+                                                        className="text-[9px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded transition-colors"
+                                                        onClick={() => setSelectedSyncTables(sourceTables)}
+                                                    >All</button>
+                                                    <button 
+                                                        className="text-[9px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded transition-colors"
+                                                        onClick={() => setSelectedSyncTables([])}
+                                                    >None</button>
+                                                </div>
+                                            </h3>
+                                            <ul className="flex-1 overflow-y-auto w-full bg-slate-950 border border-slate-800 rounded-xl rounded-t-lg divide-y divide-slate-800/50 custom-scrollbar">
+                                                {sourceTables.length === 0 && (
+                                                    <li className="p-6 text-center text-slate-500 italic text-xs">No tables found.</li>
+                                                )}
+                                                {sourceTables.map(t => {
+                                                    const isSame = targetTables.includes(t);
+                                                    const isSelected = selectedSyncTables.includes(t);
+                                                    return (
+                                                        <li key={t} className="px-3 py-2.5 text-xs text-slate-300 hover:bg-slate-900 transition-colors w-full flex justify-between items-center group">
+                                                            <label className="flex items-center gap-2.5 cursor-pointer flex-1 truncate pr-2">
+                                                                <input 
+                                                                    type="checkbox" 
+                                                                    checked={isSelected}
+                                                                    onChange={() => {
+                                                                        setSelectedSyncTables(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t])
+                                                                    }}
+                                                                    className="w-3.5 h-3.5 rounded bg-slate-900 border-slate-700 text-cyan-500 focus:ring-cyan-500 focus:ring-offset-slate-950 shrink-0"
+                                                                />
+                                                                <span className={`truncate ${isSelected ? 'text-cyan-300' : 'text-slate-400 group-hover:text-cyan-400'}`}>{t}</span>
+                                                            </label>
+                                                            {isSame ? (
+                                                                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" title="Same"></div>
+                                                            ) : (
+                                                                <div className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" title="Different"></div>
+                                                            )}
+                                                        </li>
+                                                    );
+                                                })}
+                                            </ul>
+                                        </div>
+                                    </div>
+
+                                    {/* TARGET COLUMN */}
+                                    <div className="flex-1 bg-slate-900/50 backdrop-blur-xl border border-slate-800 rounded-2xl p-6 flex flex-col shadow-xl min-w-[250px]">
+                                        <div className="flex items-center justify-between mb-6 pb-3 border-b border-slate-800 gap-2">
+                                            <div className="flex flex-col gap-1 w-full">
+                                                <h2 className="text-md font-semibold text-slate-100 flex items-center gap-2">
+                                                    Target
+                                                    {selectedTargetDb && (
+                                                        <button 
+                                                            className="p-1 bg-slate-800 hover:bg-slate-700 text-emerald-400 rounded-md transition-colors flex items-center justify-center border border-slate-700/50 ml-auto"
+                                                            onClick={() => fetchTargetTables()}
+                                                            title="Refresh Tables"
+                                                        >
+                                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                                                        </button>
+                                                    )}
+                                                </h2>
+                                                {targetDatabases.length > 0 && (
+                                                    <select 
+                                                        className="bg-slate-950 border border-slate-700/50 rounded-lg py-1 px-2 text-xs text-emerald-400 focus:outline-none focus:ring-1 focus:ring-emerald-500 w-full"
+                                                        value={selectedTargetDb} 
+                                                        onChange={e => {
+                                                            setSelectedTargetDb(e.target.value);
+                                                            handleSaveSettingsAuto(selectedSourceDb, e.target.value);
+                                                        }}
+                                                    >
+                                                        <option value="" disabled>Select Database...</option>
+                                                        {targetDatabases.map(db => <option key={db} value={db}>{db}</option>)}
+                                                    </select>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        <div className="flex-1 flex flex-col overflow-hidden min-h-0">
+                                            <h3 className="text-xs font-medium text-slate-400 mb-3 flex items-center justify-between">
+                                                Tables 
+                                                <span className="bg-slate-800 px-1.5 py-0.5 rounded-full text-[10px] text-slate-300">{targetTables.length}</span>
+                                            </h3>
+                                            <ul className="flex-1 overflow-y-auto w-full bg-slate-950 border border-slate-800 rounded-xl rounded-t-lg divide-y divide-slate-800/50 custom-scrollbar">
+                                                {targetTables.length === 0 && (
+                                                    <li className="p-6 text-center text-slate-500 italic text-xs">No tables found.</li>
+                                                )}
+                                                {targetTables.map(t => {
+                                                    const isSame = sourceTables.includes(t);
+                                                    return (
+                                                        <li key={t} className="px-3 py-2.5 text-xs text-slate-300 hover:bg-slate-900 hover:text-emerald-300 transition-colors w-full cursor-default flex justify-between items-center group">
+                                                            <span className="truncate pr-2">{t}</span>
+                                                            {isSame ? (
+                                                                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" title="Same"></div>
+                                                            ) : (
+                                                                <div className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" title="Different"></div>
+                                                            )}
+                                                        </li>
+                                                    );
+                                                })}
+                                            </ul>
+                                        </div>
+                                    </div>
                                 </div>
                             )}
                         </div>
-                    </div>
 
-                    {/* TARGET SETTINGS */}
-                    <div className="flex-1 bg-slate-900/50 border border-slate-800 rounded-2xl p-6 flex flex-col">
-                        <h2 className="text-lg font-semibold text-emerald-400 mb-6 pb-3 border-b border-slate-800">
-                            Target Sever Connection
-                        </h2>
-                        
-                        <div className="space-y-6">
-                            <div>
-                                <label className="block text-sm font-medium text-slate-400 mb-2">Database Driver</label>
-                                <select 
-                                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-sm text-slate-200 focus:ring-2 focus:ring-emerald-500/50 outline-none transition-all"
-                                    value={targetDriver} 
-                                    onChange={e => {setTargetDriver(e.target.value); setHideCredentials(false);}}
+                        {/* RIGHT COLUMN: LIVE LOGS */}
+                        <div className="flex-1 bg-slate-900/50 border border-slate-800 rounded-2xl p-6 flex flex-col font-mono text-sm overflow-hidden text-slate-300 shadow-xl max-w-sm lg:max-w-md">
+                            <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-800 shrink-0">
+                                <h2 className="text-lg font-semibold text-cyan-400 flex items-center gap-2">
+                                    <span className="relative flex h-2 w-2">
+                                        {isSyncing ? (
+                                            <>
+                                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                                                <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                                            </>
+                                        ) : (
+                                            <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500 shadow-[0_0_8px_rgba(6,182,212,0.6)]"></span>
+                                        )}
+                                    </span>
+                                    Live Logs
+                                </h2>
+                                <button 
+                                    className="text-[10px] font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-1 rounded transition-colors" 
+                                    onClick={() => setLogs([])}
                                 >
-                                    <option value="mysql">MySQL</option>
-                                    <option value="postgres">PostgreSQL</option>
-                                </select>
+                                    Clear
+                                </button>
                             </div>
-
-                            <div>
-                                <label className="block text-sm font-medium text-slate-400 mb-2">Connection String (DSN)</label>
-                                {hideCredentials ? (
-                                    <div className="relative">
-                                        <div className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-sm text-slate-500 italic break-all min-h-[5rem] flex items-center justify-center cursor-pointer hover:bg-slate-900 transition-colors" onClick={() => setHideCredentials(false)}>
-                                            • • • • • • • • • • • • • • • • • • • • • • • • • • • •
-                                        </div>
-                                    </div>
+                            <div className="flex-1 overflow-y-auto w-full bg-slate-950 border border-slate-800 rounded-lg p-3 font-mono text-xs whitespace-pre-wrap break-all custom-scrollbar">
+                                {logs.length === 0 ? (
+                                    <p className="text-slate-600 italic">Idle. Click start below.</p>
                                 ) : (
-                                    <textarea 
-                                        className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-sm text-slate-200 focus:ring-2 focus:ring-emerald-500/50 outline-none transition-all min-h-[5rem] resize-y font-mono"
-                                        value={targetDSN} 
-                                        onChange={e => setTargetDSN(e.target.value)}
-                                        placeholder={targetDriver === 'mysql' ? "user:pass@tcp(localhost:3306)/" : "host=localhost user=postgres password=postgres port=5432 sslmode=disable"}
-                                    />
+                                    logs.map((log, i) => (
+                                        <div key={i} className="mb-1.5 break-words leading-relaxed text-[11px]"><span className="text-emerald-500/70 select-none mr-2 font-bold">{'>'}</span>{log}</div>
+                                    ))
                                 )}
+                                <div ref={logsEndRef} />
                             </div>
-
-                            <button 
-                                className="px-4 py-2 bg-slate-800 hover:bg-emerald-900/30 text-emerald-400 text-sm font-medium rounded-lg border border-slate-700 hover:border-emerald-500/50 transition-all w-full md:w-auto"
-                                onClick={fetchTargetDatabases}
-                            >
-                                Connect & Fetch Databases
-                            </button>
-                            
-                            {targetDatabases.length > 0 && (
-                                <div className="animate-in fade-in slide-in-from-top-2 pt-4 border-t border-slate-800/50 mt-4">
-                                    <label className="block text-sm font-medium text-slate-400 mb-2">Search & Select Database</label>
-                                    <input 
-                                        type="text"
-                                        placeholder="Search database..."
-                                        className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 mb-3 text-sm text-slate-200 focus:ring-2 focus:ring-emerald-500/50 outline-none transition-all placeholder:text-slate-600"
-                                        value={targetSearch}
-                                        onChange={e => setTargetSearch(e.target.value)}
-                                    />
-                                    <select 
-                                        className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-sm text-slate-200 focus:ring-2 focus:ring-emerald-500/50 outline-none"
-                                        value={selectedTargetDb} 
-                                        onChange={e => setSelectedTargetDb(e.target.value)}
-                                    >
-                                        <option value="" disabled>Select a database</option>
-                                        {filteredTargetDatabases.map(db => (
-                                            <option key={db} value={db}>{db}</option>
-                                        ))}
-                                    </select>
-                                </div>
-                            )}
                         </div>
-                    </div>
-                </main>
-            )}
-
-            {activeTab === 'logs' && (
-                <main className="flex gap-6 flex-1 overflow-auto animate-in fade-in slide-in-from-bottom-2 duration-300 p-1">
-                    <div className="flex-1 bg-slate-900/50 border border-slate-800 rounded-2xl p-6 flex flex-col font-mono text-sm overflow-hidden text-slate-300 shadow-xl">
-                        <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-800">
-                            <h2 className="text-lg font-semibold text-cyan-400">Live Migration Logs</h2>
-                            <button 
-                                className="text-xs font-semibold bg-slate-800 hover:bg-slate-700 px-3 py-1 rounded transition-colors" 
-                                onClick={() => setLogs([])}
-                            >
-                                Clear Logs
-                            </button>
-                        </div>
-                        <div className="flex-1 overflow-y-auto w-full bg-slate-950 border border-slate-800 rounded-lg p-4 font-mono text-xs whitespace-pre-wrap break-all custom-scrollbar">
-                            {logs.length === 0 ? (
-                                <p className="text-slate-600 italic">No logs available. Start a sync to see output.</p>
-                            ) : (
-                                logs.map((log, i) => (
-                                    <div key={i} className="mb-1 break-words"><span className="text-slate-500 select-none mr-2">›</span>{log}</div>
-                                ))
-                            )}
-                        </div>
-                    </div>
-                </main>
-            )}
+                    </>
+                )}
+            </main>
 
             <footer className="mt-6 bg-slate-900/80 border border-slate-800 rounded-2xl p-4 shadow-lg backdrop-blur-md flex flex-col gap-4">
                 {isSyncing && syncProgress && (
