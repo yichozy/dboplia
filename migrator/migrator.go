@@ -1,13 +1,17 @@
 package migrator
 
 import (
+	"bufio"
 	"context"
 	"database/sql"
 	"fmt"
+	"io"
+	"net"
+	"os/exec"
 	"strings"
 	"time"
 
-	_ "github.com/go-sql-driver/mysql"
+	"github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
@@ -86,11 +90,12 @@ func GetTables(driver, dsn string) ([]string, error) {
 	var query string
 	var tables []string
 
-	if driver == "mysql" {
+	switch driver {
+case "mysql":
 		query = "SHOW TABLES"
-	} else if driver == "postgres" {
+	case "postgres":
 		query = "SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname != 'pg_catalog' AND schemaname != 'information_schema'"
-	} else {
+	default:
 		return nil, fmt.Errorf("unsupported driver: %s", driver)
 	}
 
@@ -434,4 +439,182 @@ func (m *Migrator) mapType(sourceType, targetDriver string) string {
 	}
 
 	return "TEXT"
+}
+
+// DumpAndReplace uses native dump tools (pg_dump/mysqldump) to completely replace the target database
+func (m *Migrator) DumpAndReplace(ctx context.Context) error {
+	emitLog := func(format string, args ...interface{}) {
+		msg := fmt.Sprintf(format, args...)
+		fmt.Println(msg)
+		runtime.EventsEmit(ctx, "appLog", msg)
+	}
+
+	emitLog("Starting Native DB Replace (Dump -> Restore)...")
+
+	if m.Config.Source.Driver != m.Config.Target.Driver {
+		return fmt.Errorf("native dump and replace requires matching drivers (got %s vs %s)", m.Config.Source.Driver, m.Config.Target.Driver)
+	}
+
+	driver := m.Config.Source.Driver
+
+	if driver == "postgres" {
+		return m.dumpAndReplacePostgres(ctx, emitLog)
+	} else if driver == "mysql" {
+		return m.dumpAndReplaceMySQL(ctx, emitLog)
+	}
+
+	return fmt.Errorf("unsupported driver for native dump: %s", driver)
+}
+
+func streamLogIterative(prefix string, reader io.Reader, emitLog func(string, ...interface{})) {
+	scanner := bufio.NewScanner(reader)
+	for scanner.Scan() {
+		text := scanner.Text()
+		if text != "" {
+			emitLog("%s: %s", prefix, text)
+		}
+	}
+}
+
+func (m *Migrator) dumpAndReplacePostgres(ctx context.Context, emitLog func(string, ...interface{})) error {
+	emitLog("  -> Configuring pg_dump and psql pipeline...")
+	
+	dumpCmd := exec.CommandContext(ctx, "pg_dump", "-v", "--clean", "--if-exists", "--no-owner", "-d", m.Config.Source.DSN)
+	restoreCmd := exec.CommandContext(ctx, "psql", "-d", m.Config.Target.DSN)
+
+	pipe, err := dumpCmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("failed creating pipe: %w", err)
+	}
+	defer pipe.Close() // Ensure pipe is closed if returning early
+	
+	restoreCmd.Stdin = pipe
+
+	dumpStderr, err := dumpCmd.StderrPipe()
+	if err != nil {
+		return fmt.Errorf("failed binding pg_dump stderr: %w", err)
+	}
+	restoreStderr, err := restoreCmd.StderrPipe()
+	if err != nil {
+		return fmt.Errorf("failed binding psql stderr: %w", err)
+	}
+	restoreStdout, err := restoreCmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("failed binding psql stdout: %w", err)
+	}
+
+	emitLog("  -> Starting dump process...")
+	if err := dumpCmd.Start(); err != nil {
+		return fmt.Errorf("failed to start pg_dump (is it installed?): %w", err)
+	}
+
+	emitLog("  -> Starting restore process...")
+	if err := restoreCmd.Start(); err != nil {
+		return fmt.Errorf("failed to start psql (is it installed?): %w", err)
+	}
+
+	go streamLogIterative("pg_dump", dumpStderr, emitLog)
+	go streamLogIterative("psql", restoreStderr, emitLog)
+	go streamLogIterative("psql(stdout)", restoreStdout, emitLog)
+
+	// Wait for dump to finish
+	if err := dumpCmd.Wait(); err != nil {
+		return fmt.Errorf("pg_dump pipeline failed or exited abruptly: %w", err)
+	}
+	pipe.Close() // strictly close the pipe so psql receives EOF
+
+	// Wait for restore to finish
+	if err := restoreCmd.Wait(); err != nil {
+		return fmt.Errorf("psql pipeline failed or exited abruptly: %w", err)
+	}
+
+	emitLog("  -> Database replacement completed successfully!")
+	return nil
+}
+
+func (m *Migrator) dumpAndReplaceMySQL(ctx context.Context, emitLog func(string, ...interface{})) error {
+	emitLog("  -> Parsing source MySQL DSN...")
+	srcCfg, err := mysql.ParseDSN(m.Config.Source.DSN)
+	if err != nil {
+		return fmt.Errorf("failed parsing source mysql dsn: %w", err)
+	}
+
+	emitLog("  -> Parsing target MySQL DSN...")
+	tgtCfg, err := mysql.ParseDSN(m.Config.Target.DSN)
+	if err != nil {
+		return fmt.Errorf("failed parsing target mysql dsn: %w", err)
+	}
+
+	buildArgs := func(cfg *mysql.Config) []string {
+		var args []string
+		if cfg.User != "" {
+			args = append(args, "-u", cfg.User)
+		}
+		if cfg.Passwd != "" {
+			args = append(args, "-p"+cfg.Passwd)
+		}
+		if cfg.Net == "tcp" {
+			h, p, _ := net.SplitHostPort(cfg.Addr)
+			if h != "" {
+				args = append(args, "-h", h)
+			}
+			if p != "" {
+				args = append(args, "-P", p)
+			}
+		}
+		return args
+	}
+
+	dumpArgs := append(buildArgs(srcCfg), "--single-transaction", "--routines", "--triggers", "--events", "--add-drop-table", srcCfg.DBName)
+	restoreArgs := append(buildArgs(tgtCfg), tgtCfg.DBName)
+
+	dumpCmd := exec.CommandContext(ctx, "mysqldump", dumpArgs...)
+	restoreCmd := exec.CommandContext(ctx, "mysql", restoreArgs...)
+
+	pipe, err := dumpCmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("failed creating pipe: %w", err)
+	}
+	defer pipe.Close()
+	
+	restoreCmd.Stdin = pipe
+
+	dumpStderr, err := dumpCmd.StderrPipe()
+	if err != nil {
+		return fmt.Errorf("failed binding mysqldump stderr: %w", err)
+	}
+	restoreStderr, err := restoreCmd.StderrPipe()
+	if err != nil {
+		return fmt.Errorf("failed binding mysql stderr: %w", err)
+	}
+	restoreStdout, err := restoreCmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("failed binding mysql stdout: %w", err)
+	}
+
+	emitLog("  -> Starting mysqldump process...")
+	if err := dumpCmd.Start(); err != nil {
+		return fmt.Errorf("failed to start mysqldump (is it installed?): %w", err)
+	}
+
+	emitLog("  -> Starting mysql restore process...")
+	if err := restoreCmd.Start(); err != nil {
+		return fmt.Errorf("failed to start mysql (is it installed?): %w", err)
+	}
+
+	go streamLogIterative("mysqldump", dumpStderr, emitLog)
+	go streamLogIterative("mysql", restoreStderr, emitLog)
+	go streamLogIterative("mysql(stdout)", restoreStdout, emitLog)
+
+	if err := dumpCmd.Wait(); err != nil {
+		return fmt.Errorf("mysqldump pipeline failed or exited abruptly: %w", err)
+	}
+	pipe.Close()
+
+	if err := restoreCmd.Wait(); err != nil {
+		return fmt.Errorf("mysql pipeline failed or exited abruptly: %w", err)
+	}
+
+	emitLog("  -> Database replacement completed successfully!")
+	return nil
 }

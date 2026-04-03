@@ -146,6 +146,58 @@ func (a *App) SyncDatabase(selectedTables []string) string {
 	return "Database migration completed successfully!"
 }
 
+// DumpAndReplaceDatabase completely replaces target db using native dump tools
+func (a *App) DumpAndReplaceDatabase() string {
+	a.Log("[DumpAndReplaceDatabase] Started native dump & replace...")
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		a.Logf("Error loading config: %v", err)
+		return fmt.Sprintf("Error loading config: %v", err)
+	}
+
+	if cfg.Source.Database == "" || cfg.Target.Database == "" {
+		a.Log("Error: Source or Target database is not selected in config.")
+		return "Error: Source or Target database is not selected in config. Please save settings first."
+	}
+
+	sourceDSNContext := BuildDSN(cfg.Source.Driver, cfg.Source.DSN, cfg.Source.Database)
+	targetDSNContext := BuildDSN(cfg.Target.Driver, cfg.Target.DSN, cfg.Target.Database)
+
+	cfgContext := &config.Config{
+		Source: config.DatabaseConfig{Driver: cfg.Source.Driver, DSN: sourceDSNContext, Database: cfg.Source.Database},
+		Target: config.DatabaseConfig{Driver: cfg.Target.Driver, DSN: targetDSNContext, Database: cfg.Target.Database},
+	}
+	m := migrator.New(cfgContext)
+
+	// Context for cancellation check
+	ctx, cancel := context.WithCancel(a.ctx)
+	
+	a.cancelMutex.Lock()
+	a.syncCancelFunc = cancel
+	a.cancelMutex.Unlock()
+	
+	defer func() {
+		a.cancelMutex.Lock()
+		a.syncCancelFunc = nil
+		a.cancelMutex.Unlock()
+		cancel()
+		a.Log("[DumpAndReplaceDatabase] Cleaned up context.")
+	}()
+
+	a.Log("[DumpAndReplaceDatabase] Passing context to Migrator DumpAndReplace...")
+	if err := m.DumpAndReplace(ctx); err != nil {
+		if errors.Is(err, context.Canceled) {
+			a.Log("[DumpAndReplaceDatabase] Returning stopped by user message.")
+			return "Database replacement stopped by user."
+		}
+		a.Logf("[DumpAndReplaceDatabase] Replacement failed with err: %v", err)
+		return fmt.Sprintf("Error: %v", err)
+	}
+
+	a.Log("[DumpAndReplaceDatabase] Finished successfully.")
+	return "Database replaced completely and successfully!"
+}
+
 // StopSync requests the active migration loop to cancel
 func (a *App) StopSync() {
 	a.Log("[StopSync] Invoked!")

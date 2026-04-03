@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
-import { GetTables, GetDatabases, SyncDatabase, StopSync, LoadSettings, SaveSettings, CheckVersion, OpenDownloadUrl } from '../wailsjs/go/main/App';
+import { GetTables, GetDatabases, SyncDatabase, DumpAndReplaceDatabase, StopSync, LoadSettings, SaveSettings, CheckVersion, OpenDownloadUrl } from '../wailsjs/go/main/App';
 import { EventsOn, EventsOff } from '../wailsjs/runtime/runtime';
 
 function App() {
-    const [activeTab, setActiveTab] = useState('sync'); // 'sync' or 'settings'
+    const [activeTab, setActiveTab] = useState('sync_table'); // 'sync_db', 'sync_table', 'settings', or 'logs'
 
     const [sourceDriver, setSourceDriver] = useState('postgres');
     const [sourceDSN, setSourceDSN] = useState('');
@@ -192,6 +192,28 @@ function App() {
         }
     };
 
+    const handleDumpReplace = async () => {
+        if (!selectedSourceDb || !selectedTargetDb) {
+            setStatus('Please select source and target databases first.');
+            return;
+        }
+
+        setIsSyncing(true);
+        setSyncProgress(null);
+        setStatus('Starting completely database replacement (Native Dump)...');
+        
+        try {
+            const result = await DumpAndReplaceDatabase();
+            setStatus(`Replace Result: ${result}`);
+            
+            await fetchTargetTables();
+        } catch (err: any) {
+            setStatus(`Replace Error: ${err}`);
+        } finally {
+            setIsSyncing(false);
+        }
+    };
+
     const handleStopSync = async () => {
         try {
             await StopSync();
@@ -233,10 +255,16 @@ function App() {
                 
                 <div className="flex justify-center space-x-6 border-b border-slate-800 pb-2">
                     <button 
-                        className={`pb-2 px-2 text-sm font-medium transition-colors ${activeTab === 'sync' ? 'text-cyan-400 border-b-2 border-cyan-400' : 'text-slate-500 hover:text-slate-300'}`}
-                        onClick={() => setActiveTab('sync')}
+                        className={`pb-2 px-2 text-sm font-medium transition-colors ${activeTab === 'sync_db' ? 'text-amber-400 border-b-2 border-amber-400' : 'text-slate-500 hover:text-slate-300'}`}
+                        onClick={() => setActiveTab('sync_db')}
                     >
-                        Total Sync
+                        SyncDB
+                    </button>
+                    <button 
+                        className={`pb-2 px-2 text-sm font-medium transition-colors ${activeTab === 'sync_table' ? 'text-cyan-400 border-b-2 border-cyan-400' : 'text-slate-500 hover:text-slate-300'}`}
+                        onClick={() => setActiveTab('sync_table')}
+                    >
+                        SyncTable
                     </button>
                     <button 
                         className={`pb-2 px-2 text-sm font-medium transition-colors ${activeTab === 'settings' ? 'text-cyan-400 border-b-2 border-cyan-400' : 'text-slate-500 hover:text-slate-300'}`}
@@ -253,7 +281,43 @@ function App() {
                 </div>
             </header>
 
-            {activeTab === 'sync' && (
+            {activeTab === 'sync_db' && (
+                <main className="flex gap-6 flex-1 overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-300 items-center justify-center p-4">
+                    <div className="bg-slate-900/50 backdrop-blur-xl border border-slate-800 rounded-2xl p-10 flex flex-col items-center justify-center shadow-xl w-full max-w-2xl text-center">
+                        <div className="w-16 h-16 bg-amber-500/20 text-amber-500 rounded-full flex items-center justify-center mb-6">
+                            <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                            </svg>
+                        </div>
+                        <h2 className="text-2xl font-bold text-slate-100 mb-2">Native Database Replacement</h2>
+                        <p className="text-slate-400 mb-8 text-sm">
+                            This will completely replace the target database using native database dump utilities (e.g. pg_dump and psql, or mysqldump and mysql). All schema, indices, constraints, and data will be mirrored perfectly.
+                        </p>
+                        
+                        <div className="flex items-center gap-4 w-full mb-8">
+                            <div className="flex-1 bg-slate-950 border border-slate-800 rounded-xl p-4 text-left">
+                                <p className="text-xs text-slate-500 mb-1">Source DB</p>
+                                <p className="text-sm font-semibold text-cyan-400 truncate">{selectedSourceDb || 'Not Configured'}</p>
+                            </div>
+                            <svg className="w-6 h-6 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                            </svg>
+                            <div className="flex-1 bg-slate-950 border border-slate-800 rounded-xl p-4 text-left">
+                                <p className="text-xs text-slate-500 mb-1">Target DB</p>
+                                <p className="text-sm font-semibold text-emerald-400 truncate">{selectedTargetDb || 'Not Configured'}</p>
+                            </div>
+                        </div>
+
+                        {selectedSourceDb && selectedTargetDb ? (
+                            <p className="text-amber-500 text-xs mt-2 italic font-semibold">* Warning: This action destroys and overrides all existing data directly inside the target database.</p>
+                        ) : (
+                            <p className="text-red-400/80 text-xs mt-2 italic">Please configure databases in Server Settings first.</p>
+                        )}
+                    </div>
+                </main>
+            )}
+
+            {activeTab === 'sync_table' && (
                 <main className="flex gap-6 flex-1 overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-300">
                     {/* SOURCE COLUMN */}
                     <div className="flex-1 bg-slate-900/50 backdrop-blur-xl border border-slate-800 rounded-2xl p-6 flex flex-col shadow-xl">
@@ -536,7 +600,7 @@ function App() {
                     </div>
 
                     <div className="flex gap-4">
-                        {activeTab === 'sync' && (
+                        {(activeTab === 'sync_table' || activeTab === 'sync_db') && (
                             isSyncing ? (
                                 <button 
                                     className="px-6 py-2.5 rounded-xl text-sm font-semibold transition-all shadow-lg active:scale-95 flex items-center gap-2 bg-red-500/20 text-red-500 border border-red-500/50 hover:bg-red-500/30"
@@ -547,12 +611,19 @@ function App() {
                                     </svg>
                                     Stop Sync
                                 </button>
-                            ) : (
+                            ) : activeTab === 'sync_table' ? (
                                 <button 
                                     className="px-6 py-2.5 rounded-xl text-sm font-semibold transition-all shadow-lg shadow-cyan-900/20 active:scale-95 flex items-center gap-2 bg-gradient-to-r from-cyan-600 to-emerald-600 text-white hover:from-cyan-500 hover:to-emerald-500 border-none"
                                     onClick={handleSync}
                                 >
-                                    Start Total Sync
+                                    Start Table Sync
+                                </button>
+                            ) : (
+                                <button 
+                                    className="px-6 py-2.5 bg-amber-500/10 text-amber-500 hover:text-amber-400 border border-amber-500/30 hover:border-amber-500 hover:bg-amber-500/20 rounded-xl text-sm font-medium transition-all shadow-lg active:scale-95"
+                                    onClick={handleDumpReplace}
+                                >
+                                    Start Native Dump & Replace
                                 </button>
                             )
                         )}

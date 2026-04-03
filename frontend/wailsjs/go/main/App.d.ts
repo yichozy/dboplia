@@ -5,6 +5,8 @@ import {config} from '../models';
 
 export function CheckVersion():Promise<main.UpdateInfo>;
 
+export function DumpAndReplaceDatabase():Promise<string>;
+
 export function GetDatabases(arg1:string,arg2:string):Promise<Array<string>>;
 
 export function GetTables(arg1:string,arg2:string):Promise<Array<string>>;

@@ -6,6 +6,10 @@ export function CheckVersion() {
   return window['go']['main']['App']['CheckVersion']();
 }
 
+export function DumpAndReplaceDatabase() {
+  return window['go']['main']['App']['DumpAndReplaceDatabase']();
+}
+
 export function GetDatabases(arg1, arg2) {
   return window['go']['main']['App']['GetDatabases'](arg1, arg2);
 }
