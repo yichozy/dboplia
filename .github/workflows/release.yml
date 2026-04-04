@@ -135,7 +135,7 @@ jobs:
       - name: Prepare Postgres Tools (Windows)
         if: runner.os == 'Windows'
         run: |
-          mkdir -p migrator/embedded/bin
+          New-Item -ItemType Directory -Force -Path migrator/embedded/bin
           $pgDump = (Get-ChildItem -Path "C:\Program Files\PostgreSQL" -Filter "pg_dump.exe" -Recurse).FullName | Select-Object -First 1
           $psql = (Get-ChildItem -Path "C:\Program Files\PostgreSQL" -Filter "psql.exe" -Recurse).FullName | Select-Object -First 1
           Copy-Item $pgDump -Destination migrator/embedded/bin/pg_dump_windows_amd64.exe
