@@ -23,7 +23,7 @@ import (
 )
 
 // Current version of the application
-const AppVersion = "v0.2.0"
+const AppVersion = "v0.2.1"
 
 // UpdateInfo holds the result of a version check
 type UpdateInfo struct {
