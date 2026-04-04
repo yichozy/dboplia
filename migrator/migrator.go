@@ -505,12 +505,12 @@ func (m *Migrator) dumpAndReplacePostgres(ctx context.Context, emitLog func(stri
 
 	emitLog("  -> Starting dump process...")
 	if err := dumpCmd.Start(); err != nil {
-		return fmt.Errorf("failed to start pg_dump (is it installed?): %w", err)
+		return fmt.Errorf("failed to start pg_dump: %w\n\n💡 TIP: Please ensure PostgreSQL client tools are installed and in your PATH.\n- macOS: brew install postgresql\n- Ubuntu/Debian: sudo apt install postgresql-client\n- Windows: Add the PostgreSQL bin folder to your System PATH", err)
 	}
 
 	emitLog("  -> Starting restore process...")
 	if err := restoreCmd.Start(); err != nil {
-		return fmt.Errorf("failed to start psql (is it installed?): %w", err)
+		return fmt.Errorf("failed to start psql: %w\n\n💡 TIP: Please ensure PostgreSQL client tools are installed and in your PATH.\n- macOS: brew install postgresql\n- Ubuntu/Debian: sudo apt install postgresql-client\n- Windows: Add the PostgreSQL bin folder to your System PATH", err)
 	}
 
 	go streamLogIterative("pg_dump", dumpStderr, emitLog)
@@ -594,12 +594,12 @@ func (m *Migrator) dumpAndReplaceMySQL(ctx context.Context, emitLog func(string,
 
 	emitLog("  -> Starting mysqldump process...")
 	if err := dumpCmd.Start(); err != nil {
-		return fmt.Errorf("failed to start mysqldump (is it installed?): %w", err)
+		return fmt.Errorf("failed to start mysqldump: %w\n\n💡 TIP: Please ensure MySQL client tools are installed and in your PATH.\n- macOS: brew install mysql-client\n- Ubuntu/Debian: sudo apt install default-mysql-client\n- Windows: Add the MySQL bin folder to your System PATH", err)
 	}
 
 	emitLog("  -> Starting mysql restore process...")
 	if err := restoreCmd.Start(); err != nil {
-		return fmt.Errorf("failed to start mysql (is it installed?): %w", err)
+		return fmt.Errorf("failed to start mysql: %w\n\n💡 TIP: Please ensure MySQL client tools are installed and in your PATH.\n- macOS: brew install mysql-client\n- Ubuntu/Debian: sudo apt install default-mysql-client\n- Windows: Add the MySQL bin folder to your System PATH", err)
 	}
 
 	go streamLogIterative("mysqldump", dumpStderr, emitLog)
