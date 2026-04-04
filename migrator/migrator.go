@@ -16,6 +16,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"db_sync/config"
+	"db_sync/migrator/embedded"
 )
 
 // Migrator is responsible for migrating data from source to target.
@@ -477,10 +478,15 @@ func streamLogIterative(prefix string, reader io.Reader, emitLog func(string, ..
 }
 
 func (m *Migrator) dumpAndReplacePostgres(ctx context.Context, emitLog func(string, ...interface{})) error {
-	emitLog("  -> Configuring pg_dump and psql pipeline...")
+	pgDumpPath, psqlPath, err := embedded.ExtractTools()
+	if err != nil {
+		emitLog("  -> Warning: Failed to extract embedded tools: %v", err)
+	}
+
+	emitLog("  -> Configuring pipeline using %s and %s...", pgDumpPath, psqlPath)
 	
-	dumpCmd := exec.CommandContext(ctx, "pg_dump", "-v", "--clean", "--if-exists", "--no-owner", "-d", m.Config.Source.DSN)
-	restoreCmd := exec.CommandContext(ctx, "psql", "-d", m.Config.Target.DSN)
+	dumpCmd := exec.CommandContext(ctx, pgDumpPath, "-v", "--clean", "--if-exists", "--no-owner", "-d", m.Config.Source.DSN)
+	restoreCmd := exec.CommandContext(ctx, psqlPath, "-d", m.Config.Target.DSN)
 
 	pipe, err := dumpCmd.StdoutPipe()
 	if err != nil {
