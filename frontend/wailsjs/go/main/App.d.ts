@@ -13,6 +13,8 @@ export function GetDatabases(arg1:string,arg2:string):Promise<Array<string>>;
 
 export function GetTables(arg1:string,arg2:string):Promise<Array<string>>;
 
+export function InstallPostgresTools():Promise<string>;
+
 export function LoadSettings():Promise<config.Config>;
 
 export function Log(arg1:string):Promise<void>;

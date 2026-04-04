@@ -14,6 +14,8 @@ import (
 
 	"encoding/json"
 	"net/http"
+	"os/exec"
+	stdruntime "runtime"
 	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -283,4 +285,29 @@ func (a *App) CheckVersion() *UpdateInfo {
 // OpenDownloadUrl opens the release page in user's browser
 func (a *App) OpenDownloadUrl(url string) {
 	runtime.BrowserOpenURL(a.ctx, url)
+}
+
+// InstallPostgresTools attempts to install local postgresql dependencies using system package managers
+func (a *App) InstallPostgresTools() string {
+	a.Log("Attempting to install PostgreSQL tools...")
+	osFunc := stdruntime.GOOS
+	if osFunc == "darwin" {
+		cmd := exec.Command("brew", "install", "postgresql@16", "lz4", "zstd", "gettext")
+		if err := cmd.Run(); err != nil {
+			a.Logf("Failed to install tools via brew: %v", err)
+			return fmt.Sprintf("Failed to install tools: %v", err)
+		}
+		a.Log("Successfully installed PostgreSQL tools via brew.")
+		return "Successfully installed PostgreSQL tools!"
+	} else if osFunc == "linux" {
+		cmd := exec.Command("sudo", "apt-get", "install", "-y", "postgresql-client")
+		if err := cmd.Run(); err != nil {
+			a.Logf("Failed to install tools via apt-get: %v", err)
+			return fmt.Sprintf("Failed to install tools: %v", err)
+		}
+		a.Log("Successfully installed PostgreSQL tools via apt-get.")
+		return "Successfully installed PostgreSQL tools!"
+	} else {
+		return "Auto-installation is not supported on this OS. Please install PostgreSQL manually."
+	}
 }

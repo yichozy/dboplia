@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { GetTables, GetDatabases, SyncDatabase, DumpAndReplaceDatabase, StopSync, LoadSettings, SaveSettings, CheckVersion, OpenDownloadUrl, AutoUpdate } from '../wailsjs/go/main/App';
+import { GetTables, GetDatabases, SyncDatabase, DumpAndReplaceDatabase, StopSync, LoadSettings, SaveSettings, CheckVersion, OpenDownloadUrl, AutoUpdate, InstallPostgresTools } from '../wailsjs/go/main/App';
 import { EventsOn, EventsOff } from '../wailsjs/runtime/runtime';
 
 function App() {
@@ -241,6 +241,16 @@ function App() {
             await SaveSettings(sourceDriver, sourceDSN, srcDb, targetDriver, targetDSN, tgtDb);
         } catch (err) {
             console.error("Auto save failed:", err);
+        }
+    };
+
+    const handleInstallTools = async () => {
+        try {
+            setStatus('Installing PostgreSQL dependencies... This may take a few seconds.');
+            const result = await InstallPostgresTools();
+            setStatus(result);
+        } catch (err: any) {
+            setStatus(`Install Error: ${err}`);
         }
     };
 
@@ -684,12 +694,20 @@ function App() {
                             )
                         )}
                         {activeTab === 'settings' && (
-                            <button 
-                                className="px-6 py-2.5 bg-slate-800 text-slate-200 hover:text-white border border-slate-700 hover:border-slate-500 hover:bg-slate-700 rounded-xl text-sm font-medium transition-all shadow-lg active:scale-95"
-                                onClick={handleSaveSettings}
-                            >
-                                Save Settings
-                            </button>
+                            <>
+                                <button 
+                                    className="px-6 py-2.5 bg-indigo-500/10 text-indigo-400 hover:text-indigo-300 border border-indigo-500/30 hover:border-indigo-400 hover:bg-indigo-500/20 rounded-xl text-sm font-medium transition-all shadow-lg active:scale-95 whitespace-nowrap"
+                                    onClick={handleInstallTools}
+                                >
+                                    Install OS Dependencies
+                                </button>
+                                <button 
+                                    className="px-6 py-2.5 bg-slate-800 text-slate-200 hover:text-white border border-slate-700 hover:border-slate-500 hover:bg-slate-700 rounded-xl text-sm font-medium transition-all shadow-lg active:scale-95 whitespace-nowrap"
+                                    onClick={handleSaveSettings}
+                                >
+                                    Save Settings
+                                </button>
+                            </>
                         )}
                     </div>
                 </div>

@@ -22,6 +22,10 @@ export function GetTables(arg1, arg2) {
   return window['go']['main']['App']['GetTables'](arg1, arg2);
 }
 
+export function InstallPostgresTools() {
+  return window['go']['main']['App']['InstallPostgresTools']();
+}
+
 export function LoadSettings() {
   return window['go']['main']['App']['LoadSettings']();
 }
