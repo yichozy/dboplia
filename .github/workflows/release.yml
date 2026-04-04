@@ -112,7 +112,34 @@ jobs:
 
       - name: Install dependencies (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev
+        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev postgresql-client
+
+      - name: Prepare Postgres Tools (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p migrator/embedded/bin
+          cp /usr/bin/pg_dump migrator/embedded/bin/pg_dump_linux_amd64
+          cp /usr/bin/psql migrator/embedded/bin/psql_linux_amd64
+
+      - name: Prepare Postgres Tools (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p migrator/embedded/bin
+          brew install postgresql@15 || true
+          brew link postgresql@15 --force || true
+          cp $(which pg_dump) migrator/embedded/bin/pg_dump_darwin_amd64
+          cp $(which psql) migrator/embedded/bin/psql_darwin_amd64
+          cp $(which pg_dump) migrator/embedded/bin/pg_dump_darwin_arm64
+          cp $(which psql) migrator/embedded/bin/psql_darwin_arm64
+
+      - name: Prepare Postgres Tools (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          mkdir -p migrator/embedded/bin
+          $pgDump = (Get-ChildItem -Path "C:\Program Files\PostgreSQL" -Filter "pg_dump.exe" -Recurse).FullName | Select-Object -First 1
+          $psql = (Get-ChildItem -Path "C:\Program Files\PostgreSQL" -Filter "psql.exe" -Recurse).FullName | Select-Object -First 1
+          Copy-Item $pgDump -Destination migrator/embedded/bin/pg_dump_windows_amd64.exe
+          Copy-Item $psql -Destination migrator/embedded/bin/psql_windows_amd64.exe
 
       - name: Install Wails CLI
         run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
