@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { GetTables, GetDatabases, SyncDatabase, DumpAndReplaceDatabase, StopSync, LoadSettings, SaveSettings, CheckVersion, OpenDownloadUrl } from '../wailsjs/go/main/App';
+import { GetTables, GetDatabases, SyncDatabase, DumpAndReplaceDatabase, StopSync, LoadSettings, SaveSettings, CheckVersion, OpenDownloadUrl, AutoUpdate } from '../wailsjs/go/main/App';
 import { EventsOn, EventsOff } from '../wailsjs/runtime/runtime';
 
 function App() {
@@ -253,9 +253,12 @@ function App() {
                     </h1>
                     {updateInfo && (
                         <button 
-                            onClick={() => OpenDownloadUrl(updateInfo.releaseUrl)}
+                            onClick={() => {
+                                setStatus("Downloading and applying update. Please wait...");
+                                AutoUpdate().then((res: string) => setStatus(res)).catch(console.error);
+                            }}
                             className="bg-emerald-500/20 text-emerald-400 text-xs font-semibold px-2 py-1 rounded-full border border-emerald-500/30 hover:bg-emerald-500/30 transition-colors animate-pulse"
-                            title="A new version is available. Click to download."
+                            title="A new version is available. Click to auto-update."
                         >
                             Update: {updateInfo.latestVer}
                         </button>

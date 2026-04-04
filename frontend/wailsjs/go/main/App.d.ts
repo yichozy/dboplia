@@ -3,6 +3,8 @@
 import {main} from '../models';
 import {config} from '../models';
 
+export function AutoUpdate():Promise<string>;
+
 export function CheckVersion():Promise<main.UpdateInfo>;
 
 export function DumpAndReplaceDatabase():Promise<string>;
