@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 )
@@ -41,7 +42,11 @@ func ExtractTools() (pgDumpPath, psqlPath string, err error) {
 	// Try extracting pg_dump
 	if pgBytes, err := fs.ReadFile(binFS, "bin/"+pgDumpName); err == nil && len(pgBytes) > 0 {
 		_ = os.WriteFile(pgDumpDest, pgBytes, 0755)
-		pgDumpPath = pgDumpDest
+		if err := exec.Command(pgDumpDest, "--version").Run(); err != nil {
+			pgDumpPath = "pg_dump" // extraction succeeded but it's broken on this system
+		} else {
+			pgDumpPath = pgDumpDest
+		}
 	} else {
 		pgDumpPath = "pg_dump" // fallback to system path
 	}
@@ -49,7 +54,11 @@ func ExtractTools() (pgDumpPath, psqlPath string, err error) {
 	// Try extracting psql
 	if psqlBytes, err := fs.ReadFile(binFS, "bin/"+psqlName); err == nil && len(psqlBytes) > 0 {
 		_ = os.WriteFile(psqlDest, psqlBytes, 0755)
-		psqlPath = psqlDest
+		if err := exec.Command(psqlDest, "--version").Run(); err != nil {
+			psqlPath = "psql" // extraction succeeded but it's broken on this system
+		} else {
+			psqlPath = psqlDest
+		}
 	} else {
 		psqlPath = "psql" // fallback to system path
 	}
